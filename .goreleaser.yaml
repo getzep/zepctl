@@ -1,0 +1,102 @@
+version: 2
+
+project_name: zepctl
+
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./...
+
+builds:
+  - main: ./cmd/zepctl
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    # Only build darwin/arm64, not darwin/amd64
+    ignore:
+      - goos: darwin
+        goarch: amd64
+    ldflags:
+      - -s -w
+      - -X github.com/getzep/zepctl/internal/cli.version={{.Version}}
+      - -X github.com/getzep/zepctl/internal/cli.commit={{.Commit}}
+      - -X github.com/getzep/zepctl/internal/cli.date={{.Date}}
+    binary: zepctl
+
+archives:
+  - format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    # Use zip for Windows (if added later)
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE
+      - docs/*
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch
+
+# Homebrew tap publication
+brews:
+  - name: zepctl
+    repository:
+      owner: getzep
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/getzep/zepctl"
+    description: "CLI for administering Zep projects"
+    license: "Apache-2.0"
+    install: |
+      bin.install "zepctl"
+    test: |
+      system "#{bin}/zepctl", "version"
+
+# GitHub release
+release:
+  github:
+    owner: getzep
+    name: zepctl
+  draft: false
+  prerelease: auto
+  name_template: "{{.ProjectName}} v{{.Version}}"
+  footer: |
+    ## Installation
+
+    ### Homebrew (macOS)
+    ```bash
+    brew install getzep/tap/zepctl
+    ```
+
+    ### Binary Download
+    Download the appropriate binary for your platform from the assets below.
+
+    ### Verify Checksums
+    ```bash
+    sha256sum -c checksums.txt
+    ```

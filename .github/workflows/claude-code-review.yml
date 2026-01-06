@@ -2,22 +2,11 @@ name: Claude Code Review
 
 on:
   pull_request:
-    types: [opened, synchronize]
-    # Optional: Only run on specific file changes
-    # paths:
-    #   - "src/**/*.ts"
-    #   - "src/**/*.tsx"
-    #   - "src/**/*.js"
-    #   - "src/**/*.jsx"
+    types: [opened, synchronize, reopened]
 
 jobs:
   claude-review:
-    # Optional: Filter by PR author
-    # if: |
-    #   github.event.pull_request.user.login == 'external-contributor' ||
-    #   github.event.pull_request.user.login == 'new-developer' ||
-    #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
-
+    name: Claude Code Review
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -29,7 +18,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Run Claude Code Review
         id: claude-review
@@ -37,21 +26,27 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: |
-            REPO: ${{ github.repository }}
-            PR NUMBER: ${{ github.event.pull_request.number }}
+            You are reviewing a Go CLI project called zepctl. Focus on:
 
-            Please review this pull request and provide feedback on:
-            - Code quality and best practices
-            - Potential bugs or issues
-            - Performance considerations
-            - Security concerns
-            - Test coverage
+            ## Code Quality
+            - Go best practices and idiomatic code
+            - Error handling patterns
+            - Security considerations
+            - API design consistency
+            - Test coverage recommendations
+
+            ## Documentation Requirements
+            When reviewing PRs that modify CLI commands, flags, or behavior in the `internal/` or `cmd/` directories:
+            1. Check if the corresponding documentation in `docs/` is updated
+            2. The `docs/` directory contains MDX help files that document CLI usage
+            3. If a PR adds, removes, or modifies commands/flags/behavior, flag any missing documentation updates
+            4. Verify that command examples in docs match the actual implementation
+            5. Check that flag descriptions, defaults, and types are accurately documented
+
+            If CLI functionality is changed but documentation is not updated, request the author to update the relevant docs.
 
             Use the repository's CLAUDE.md for guidance on style and conventions. Be constructive and helpful in your feedback.
 
             Use `gh pr comment` with your Bash tool to leave your review as a comment on the PR.
 
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://code.claude.com/docs/en/cli-reference for available options
           claude_args: '--allowed-tools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)"'
-

@@ -1,0 +1,505 @@
+---
+title: zepctl CLI Reference
+description: Command-line interface for administering Zep projects
+---
+
+# zepctl CLI
+
+`zepctl` is a command-line interface for administering Zep projects. It provides comprehensive access to Zep's context engineering platform, enabling you to manage users, threads, knowledge graphs, and data operations from the terminal.
+
+## Installation
+
+### Homebrew (macOS/Linux)
+
+```bash
+brew install getzep/tap/zepctl
+```
+
+### Binary Download
+
+Download the appropriate binary for your platform from the [releases page](https://github.com/getzep/zepctl/releases).
+
+## Quick Start
+
+```bash
+# Configure your API key (you will be prompted to enter it securely)
+zepctl config add-profile production
+
+# Verify connection
+zepctl project get
+
+# List users
+zepctl user list
+```
+
+## Authentication
+
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `ZEP_API_KEY` | API key for authentication |
+| `ZEP_API_URL` | API endpoint URL (default: `https://api.getzep.com`) |
+| `ZEP_PROFILE` | Override current profile |
+| `ZEP_OUTPUT` | Default output format |
+
+### Configuration File
+
+Location: `~/.zepctl/config.yaml`
+
+```yaml
+current-profile: production
+profiles:
+  - name: production
+    api-key: zep_xxxxx
+    api-url: https://api.getzep.com
+  - name: development
+    api-key: zep_dev_xxxxx
+    api-url: https://api.dev.getzep.com
+```
+
+## Global Flags
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--api-key` | `-k` | Override API key |
+| `--api-url` | | Override API URL |
+| `--profile` | `-p` | Use specific profile |
+| `--output` | `-o` | Output format: `table`, `json`, `yaml`, `wide` |
+| `--quiet` | `-q` | Suppress non-essential output |
+| `--verbose` | `-v` | Enable verbose output |
+| `--help` | `-h` | Display help |
+
+## Commands
+
+### config
+
+Manage zepctl configuration including profiles and defaults.
+
+```bash
+# View current configuration
+zepctl config view
+
+# List all profiles
+zepctl config get-profiles
+
+# Switch active profile
+zepctl config use-profile <name>
+
+# Add a new profile (prompts for API key)
+zepctl config add-profile <name> [--api-url URL]
+
+# Remove a profile
+zepctl config delete-profile <name> [--force]
+```
+
+### project
+
+Get project information.
+
+```bash
+zepctl project get
+```
+
+### user
+
+Manage users in your Zep project.
+
+```bash
+# List users
+zepctl user list [--page N] [--page-size N]
+
+# Get user details
+zepctl user get <user-id>
+
+# Create a new user
+zepctl user create <user-id> [--email EMAIL] [--first-name NAME] [--last-name NAME] \
+  [--metadata JSON] [--metadata-file PATH]
+
+# Update an existing user
+zepctl user update <user-id> [--email EMAIL] [--first-name NAME] [--last-name NAME] \
+  [--metadata JSON] [--metadata-file PATH]
+
+# Delete a user (includes all associated data)
+zepctl user delete <user-id> [--force]
+
+# List user threads
+zepctl user threads <user-id>
+
+# Get user graph node
+zepctl user node <user-id>
+```
+
+<Note>
+Deleting a user removes all associated threads, graph data, and knowledge. This supports RTBF (Right to Be Forgotten) compliance.
+</Note>
+
+### thread
+
+Manage conversation threads.
+
+```bash
+# Create a new thread
+zepctl thread create <thread-id> --user <user-id>
+
+# Get thread messages
+zepctl thread get <thread-id> [--last N]
+
+# Delete a thread
+zepctl thread delete <thread-id> [--force]
+
+# List thread messages
+zepctl thread messages <thread-id> [--last N] [--limit N]
+
+# Add messages to a thread
+zepctl thread add-messages <thread-id> --file messages.json [--batch] [--wait]
+zepctl thread add-messages <thread-id> --stdin [--batch] [--wait]
+
+# Get thread context
+zepctl thread context <thread-id>
+```
+
+#### Message Format
+
+When adding messages via `--file` or `--stdin`, use this JSON format:
+
+```json
+{
+  "messages": [
+    {
+      "role": "user",
+      "name": "Alice",
+      "content": "Hello, I need help with my account"
+    },
+    {
+      "role": "assistant",
+      "content": "I'd be happy to help!"
+    }
+  ]
+}
+```
+
+### graph
+
+Manage knowledge graphs.
+
+```bash
+# List all graphs
+zepctl graph list [--page N] [--page-size N]
+
+# Create a new graph
+zepctl graph create <graph-id>
+
+# Delete a graph
+zepctl graph delete <graph-id> [--force]
+
+# Clone a graph
+zepctl graph clone --source-user USER_ID --target-user NEW_USER_ID
+zepctl graph clone --source-graph GRAPH_ID --target-graph NEW_GRAPH_ID
+
+# Add data to a graph
+zepctl graph add <graph-id> --type text --data "User prefers dark mode"
+zepctl graph add --user <user-id> --type json --file data.json
+zepctl graph add --user <user-id> --batch --file episodes.json --wait
+
+# Search a graph
+zepctl graph search "query" --user <user-id> --scope edges
+zepctl graph search "query" --graph <graph-id> --scope nodes --limit 20
+```
+
+#### Add Data Flags
+
+| Flag | Description |
+|------|-------------|
+| `--type` | Data type: `text`, `json`, `message` (default: `text`) |
+| `--data` | Inline data string |
+| `--file` | Path to data file |
+| `--stdin` | Read data from stdin |
+| `--user` | Add to user graph |
+| `--batch` | Enable batch processing |
+| `--wait` | Wait for ingestion to complete |
+
+#### Search Flags
+
+| Flag | Description |
+|------|-------------|
+| `--user` | Search user graph |
+| `--graph` | Search standalone graph |
+| `--scope` | Search scope: `edges`, `nodes`, `episodes` (default: `edges`) |
+| `--limit` | Maximum results (default: 10) |
+| `--reranker` | Reranker: `rrf`, `mmr`, `cross_encoder` |
+| `--mmr-lambda` | MMR diversity/relevance balance (0-1) |
+| `--min-score` | Minimum relevance score |
+| `--exclude-node-labels` | Comma-separated node labels to exclude |
+| `--exclude-edge-types` | Comma-separated edge types to exclude |
+
+#### Batch Episode Format
+
+```json
+{
+  "episodes": [
+    {"type": "text", "data": "User prefers morning meetings"},
+    {"type": "json", "data": "{\"preference\": \"dark_mode\"}"},
+    {"type": "message", "data": "Alice: I love hiking on weekends"}
+  ]
+}
+```
+
+### node
+
+Manage graph nodes.
+
+```bash
+# List nodes
+zepctl node list --user <user-id> [--limit N] [--cursor UUID]
+zepctl node list --graph <graph-id>
+
+# Get node details
+zepctl node get <uuid>
+
+# Get node edges
+zepctl node edges <uuid>
+
+# Get node episodes
+zepctl node episodes <uuid>
+```
+
+### edge
+
+Manage graph edges (facts/relationships).
+
+```bash
+# List edges
+zepctl edge list --user <user-id> [--limit N] [--cursor UUID]
+zepctl edge list --graph <graph-id>
+
+# Get edge details
+zepctl edge get <uuid>
+
+# Delete an edge
+zepctl edge delete <uuid> [--force]
+```
+
+### episode
+
+Manage graph episodes (source data).
+
+```bash
+# List episodes
+zepctl episode list --user <user-id> [--last N]
+zepctl episode list --graph <graph-id>
+
+# Get episode details
+zepctl episode get <uuid>
+
+# Get episode mentions
+zepctl episode mentions <uuid>
+
+# Delete an episode
+zepctl episode delete <uuid> [--force]
+```
+
+### task
+
+Monitor async operations (batch imports, cloning, etc.).
+
+```bash
+# Get task status
+zepctl task get <task-id>
+
+# Wait for task completion
+zepctl task wait <task-id> [--timeout 5m] [--poll-interval 1s]
+```
+
+### ontology
+
+Manage graph schema definitions.
+
+```bash
+# Get ontology definitions
+zepctl ontology get
+
+# Set ontology from file
+zepctl ontology set --file ontology.yaml
+```
+
+#### Ontology File Format
+
+```yaml
+entities:
+  Customer:
+    description: "A customer of the business"
+    fields:
+      tier:
+        description: "Customer tier level"
+      account_number:
+        description: "Customer account number"
+  Product:
+    description: "A product or service"
+    fields:
+      sku:
+        description: "Product SKU"
+
+edges:
+  PURCHASED:
+    description: "Customer purchased a product"
+    source_types: [Customer]
+    target_types: [Product]
+  INTERESTED_IN:
+    description: "Customer expressed interest"
+```
+
+### summary-instructions
+
+Manage user summary instructions.
+
+```bash
+# List instructions
+zepctl summary-instructions list [--user USER_ID]
+
+# Add instructions
+zepctl summary-instructions add --name NAME --instruction "Text" [--user USER_IDS]
+zepctl summary-instructions add --name NAME --file instructions.txt [--user USER_IDS]
+
+# Delete instructions
+zepctl summary-instructions delete <name> [--force] [--user USER_IDS]
+```
+
+## Examples
+
+### Export All Users
+
+```bash
+zepctl user list -o json | jq '.users[].user_id'
+```
+
+### Bulk User Creation
+
+```bash
+cat users.json | jq -c '.[]' | while read user; do
+  zepctl user create $(echo $user | jq -r '.user_id') \
+    --email "$(echo $user | jq -r '.email')" \
+    --first-name "$(echo $user | jq -r '.first_name')"
+done
+```
+
+### Migrate User Data
+
+```bash
+# Clone user graph to test environment
+zepctl graph clone --source-user prod_user_123 --target-user test_user_123
+
+# Verify clone
+zepctl node list --user test_user_123 -o json | jq '.nodes | length'
+```
+
+### Monitor Batch Import
+
+```bash
+# Start batch import
+TASK_ID=$(zepctl graph add --user user_123 --batch --file data.json -o json | jq -r '.task_id')
+
+# Wait for completion
+zepctl task wait $TASK_ID --timeout 10m
+```
+
+### Delete User (RTBF Compliance)
+
+```bash
+# Preview what will be deleted
+zepctl user get $USER_ID
+zepctl user threads $USER_ID
+
+# Delete user and all associated data
+zepctl user delete $USER_ID --force
+```
+
+### Search with Advanced Filters
+
+```bash
+# Search with cross-encoder reranking
+zepctl graph search "critical decisions" --user user_123 --reranker cross_encoder
+
+# Search nodes excluding certain labels
+zepctl graph search "product" --graph graph_456 --scope nodes \
+  --exclude-node-labels "Assistant,Document"
+```
+
+## Output Formats
+
+All commands support multiple output formats via the `--output` flag:
+
+| Format | Description |
+|--------|-------------|
+| `table` | Human-readable table (default) |
+| `json` | JSON output for scripting |
+| `yaml` | YAML output |
+| `wide` | Extended table with additional columns |
+
+```bash
+# JSON output for scripting
+zepctl user list -o json
+
+# YAML output
+zepctl user get user_123 -o yaml
+```
+
+## Shell Completions
+
+Enable tab completion for commands, flags, and arguments.
+
+### Bash
+
+Requires the `bash-completion` package.
+
+```bash
+# Load completions in current session
+source <(zepctl completion bash)
+
+# Install permanently (Linux)
+zepctl completion bash > /etc/bash_completion.d/zepctl
+
+# Install permanently (macOS with Homebrew)
+zepctl completion bash > $(brew --prefix)/etc/bash_completion.d/zepctl
+```
+
+### Zsh
+
+```bash
+# Enable completions if not already configured
+echo "autoload -U compinit; compinit" >> ~/.zshrc
+
+# Load completions in current session
+source <(zepctl completion zsh)
+
+# Install permanently (Linux)
+zepctl completion zsh > "${fpath[1]}/_zepctl"
+
+# Install permanently (macOS with Homebrew)
+zepctl completion zsh > $(brew --prefix)/share/zsh/site-functions/_zepctl
+```
+
+### Fish
+
+```bash
+# Load completions in current session
+zepctl completion fish | source
+
+# Install permanently
+zepctl completion fish > ~/.config/fish/completions/zepctl.fish
+```
+
+### PowerShell
+
+```powershell
+# Load completions in current session
+zepctl completion powershell | Out-String | Invoke-Expression
+
+# Install permanently (add to your PowerShell profile)
+zepctl completion powershell > zepctl.ps1
+# Then add `. /path/to/zepctl.ps1` to your profile
+```
+
+<Note>
+Start a new shell session after installing completions for changes to take effect.
+</Note>
