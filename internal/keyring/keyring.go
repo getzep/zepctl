@@ -1,6 +1,7 @@
 package keyring
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/zalando/go-keyring"
@@ -22,7 +23,7 @@ func Set(profile, apiKey string) error {
 func Get(profile string) (string, error) {
 	apiKey, err := keyring.Get(serviceName, profile)
 	if err != nil {
-		if err == keyring.ErrNotFound {
+		if errors.Is(err, keyring.ErrNotFound) {
 			return "", nil
 		}
 		return "", fmt.Errorf("retrieving API key from keychain: %w", err)
@@ -33,7 +34,7 @@ func Get(profile string) (string, error) {
 // Delete removes an API key for a profile from the system keychain.
 func Delete(profile string) error {
 	if err := keyring.Delete(serviceName, profile); err != nil {
-		if err == keyring.ErrNotFound {
+		if errors.Is(err, keyring.ErrNotFound) {
 			return nil
 		}
 		return fmt.Errorf("deleting API key from keychain: %w", err)
