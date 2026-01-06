@@ -150,6 +150,9 @@ Deleting a user removes all associated threads, graph data, and knowledge. This 
 Manage conversation threads.
 
 ```bash
+# List all threads
+zepctl thread list [--page N] [--page-size N] [--order-by FIELD] [--asc]
+
 # Create a new thread
 zepctl thread create <thread-id> --user <user-id>
 
@@ -169,6 +172,15 @@ zepctl thread add-messages <thread-id> --stdin [--batch] [--wait]
 # Get thread context
 zepctl thread context <thread-id>
 ```
+
+#### List Flags
+
+| Flag | Description |
+|------|-------------|
+| `--page` | Page number (default: 1) |
+| `--page-size` | Results per page (default: 50) |
+| `--order-by` | Order by field: `created_at`, `updated_at`, `user_id`, `thread_id` |
+| `--asc` | Sort in ascending order (default: descending) |
 
 #### Message Format
 
