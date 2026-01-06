@@ -63,24 +63,22 @@ changelog:
       - Merge pull request
       - Merge branch
 
-# Homebrew tap publication (same repo as source)
-brews:
+# Homebrew cask publication (same repo as source)
+# Publishes directly to 'homebrew' branch, then creates PR to main
+homebrew_casks:
   - name: zepctl
     repository:
       owner: getzep
       name: zepctl
+      branch: homebrew
       pull_request:
         enabled: true
         base:
           branch: main
-    directory: Formula
     homepage: "https://github.com/getzep/zepctl"
     description: "CLI for administering Zep projects"
-    license: "Apache-2.0"
-    install: |
-      bin.install "zepctl"
-    test: |
-      system "#{bin}/zepctl", "version"
+    binaries:
+      - zepctl
 
 # GitHub release
 release:
