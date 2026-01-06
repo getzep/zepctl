@@ -18,7 +18,7 @@ go.work
 vendor/
 
 # Built binaries
-zepctl
+/zepctl
 build/
 dist/
 
