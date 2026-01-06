@@ -29,7 +29,8 @@ builds:
     binary: zepctl
 
 archives:
-  - format: tar.gz
+  - formats:
+      - tar.gz
     name_template: >-
       {{ .ProjectName }}_
       {{- .Version }}_
@@ -38,7 +39,8 @@ archives:
     # Use zip for Windows (if added later)
     format_overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
     files:
       - README.md
       - LICENSE
@@ -67,6 +69,10 @@ brews:
     repository:
       owner: getzep
       name: zepctl
+      pull_request:
+        enabled: true
+        base:
+          branch: main
     directory: Formula
     homepage: "https://github.com/getzep/zepctl"
     description: "CLI for administering Zep projects"
