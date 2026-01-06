@@ -7,7 +7,7 @@ Command-line interface for administering Zep projects.
 ### Homebrew (macOS/Linux)
 
 ```bash
-brew install getzep/tap/zepctl
+brew install getzep/zepctl/zepctl
 ```
 
 ### Binary Download

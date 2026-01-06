@@ -61,13 +61,12 @@ changelog:
       - Merge pull request
       - Merge branch
 
-# Homebrew tap publication
+# Homebrew tap publication (same repo as source)
 brews:
   - name: zepctl
     repository:
       owner: getzep
-      name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+      name: zepctl
     directory: Formula
     homepage: "https://github.com/getzep/zepctl"
     description: "CLI for administering Zep projects"
@@ -90,7 +89,7 @@ release:
 
     ### Homebrew (macOS)
     ```bash
-    brew install getzep/tap/zepctl
+    brew install getzep/zepctl/zepctl
     ```
 
     ### Binary Download
