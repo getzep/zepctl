@@ -18,10 +18,14 @@ func New() (*Client, error) {
 		return nil, fmt.Errorf("no API key configured; set ZEP_API_KEY or configure a profile")
 	}
 
-	apiURL := config.GetAPIURL()
-
-	return zepclient.NewClient(
+	opts := []option.RequestOption{
 		option.WithAPIKey(apiKey),
-		option.WithBaseURL(apiURL),
-	), nil
+	}
+
+	// Only set base URL if explicitly configured; otherwise use SDK default
+	if apiURL := config.GetAPIURL(); apiURL != "" {
+		opts = append(opts, option.WithBaseURL(apiURL))
+	}
+
+	return zepclient.NewClient(opts...), nil
 }

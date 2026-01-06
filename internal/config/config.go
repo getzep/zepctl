@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/getzep/zepctl/internal/keyring"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 )
@@ -17,10 +18,10 @@ var (
 )
 
 // Profile represents a named configuration profile.
+// API keys are stored in the system keychain, not in this config file.
 type Profile struct {
 	Name   string `yaml:"name"`
-	APIKey string `yaml:"api-key"`
-	APIURL string `yaml:"api-url"`
+	APIURL string `yaml:"api-url,omitempty"`
 }
 
 // Config represents the zepctl configuration.
@@ -136,27 +137,30 @@ func (c *Config) GetCurrentProfile() *Profile {
 	return c.GetProfile(c.CurrentProfile)
 }
 
-// GetAPIKey returns the API key to use, checking flags, env, and profile.
+// GetAPIKey returns the API key to use, checking flags, env, and profile keychain.
 func GetAPIKey() string {
 	// Flag/env takes precedence
 	if key := viper.GetString("api-key"); key != "" {
 		return key
 	}
 
-	// Then check current profile
+	// Then check current profile's keychain entry
 	cfg, err := Load()
 	if err != nil {
 		return ""
 	}
 
 	if profile := cfg.GetCurrentProfile(); profile != nil {
-		return profile.APIKey
+		if key, err := keyring.Get(profile.Name); err == nil && key != "" {
+			return key
+		}
 	}
 
 	return ""
 }
 
 // GetAPIURL returns the API URL to use, checking flags, env, and profile.
+// Returns empty string if no explicit URL is configured, allowing the SDK to use its default.
 func GetAPIURL() string {
 	// Flag/env takes precedence
 	if url := viper.GetString("api-url"); url != "" {
@@ -166,12 +170,12 @@ func GetAPIURL() string {
 	// Then check current profile
 	cfg, err := Load()
 	if err != nil {
-		return "https://api.getzep.com"
+		return ""
 	}
 
 	if profile := cfg.GetCurrentProfile(); profile != nil && profile.APIURL != "" {
 		return profile.APIURL
 	}
 
-	return "https://api.getzep.com"
+	return ""
 }
