@@ -13,6 +13,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// maxInstructionLength is the maximum length for summary instruction text.
+const maxInstructionLength = 100
+
 var summaryInstructionsCmd = &cobra.Command{
 	Use:     "summary-instructions",
 	Aliases: []string{"si"},
@@ -85,8 +88,8 @@ var summaryInstructionsAddCmd = &cobra.Command{
 			instructionText = strings.TrimSpace(string(data))
 		}
 
-		if len(instructionText) > 100 {
-			return fmt.Errorf("instruction text exceeds maximum length of 100 characters (got %d)", len(instructionText))
+		if len(instructionText) > maxInstructionLength {
+			return fmt.Errorf("instruction text exceeds maximum length of %d characters (got %d)", maxInstructionLength, len(instructionText))
 		}
 
 		c, err := client.New()

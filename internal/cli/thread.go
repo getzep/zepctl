@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/getzep/zep-go/v3"
 	"github.com/getzep/zepctl/internal/client"
@@ -263,7 +262,7 @@ var threadAddMessagesCmd = &cobra.Command{
 
 			if wait && resp.TaskID != nil {
 				output.Info("Batch task started: %s", *resp.TaskID)
-				if err := waitForTaskCompletion(c, *resp.TaskID); err != nil {
+				if err := waitForTask(c, *resp.TaskID, defaultTaskTimeout, defaultTaskPollInterval); err != nil {
 					return err
 				}
 				output.Info("Batch processing completed")
@@ -306,46 +305,6 @@ var threadContextCmd = &cobra.Command{
 
 		return output.Print(ctx)
 	},
-}
-
-// waitForTaskCompletion polls the task status until completion.
-func waitForTaskCompletion(c *client.Client, taskID string) error {
-	timeout := 5 * time.Minute
-	pollInterval := 1 * time.Second
-
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	ticker := time.NewTicker(pollInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("timeout waiting for task %s", taskID)
-		case <-ticker.C:
-			task, err := c.Task.Get(ctx, taskID)
-			if err != nil {
-				return fmt.Errorf("getting task: %w", err)
-			}
-
-			status := ""
-			if task.Status != nil {
-				status = *task.Status
-			}
-
-			switch status {
-			case "completed":
-				return nil
-			case "failed":
-				errMsg := "unknown error"
-				if task.Error != nil && task.Error.Message != nil {
-					errMsg = *task.Error.Message
-				}
-				return fmt.Errorf("task %s failed: %s", taskID, errMsg)
-			}
-		}
-	}
 }
 
 func init() {

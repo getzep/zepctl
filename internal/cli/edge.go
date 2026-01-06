@@ -37,14 +37,25 @@ var edgeListCmd = &cobra.Command{
 
 		var edges []*zep.EntityEdge
 
+		limit, _ := cmd.Flags().GetInt("limit")
+		cursor, _ := cmd.Flags().GetString("cursor")
+
+		req := &zep.GraphEdgesRequest{}
+		if limit > 0 {
+			req.Limit = zep.Int(limit)
+		}
+		if cursor != "" {
+			req.UUIDCursor = zep.String(cursor)
+		}
+
 		if userID != "" {
-			result, err := c.Graph.Edge.GetByUserID(context.Background(), userID, &zep.GraphEdgesRequest{})
+			result, err := c.Graph.Edge.GetByUserID(context.Background(), userID, req)
 			if err != nil {
 				return fmt.Errorf("listing edges: %w", err)
 			}
 			edges = result
 		} else {
-			result, err := c.Graph.Edge.GetByGraphID(context.Background(), graphID, &zep.GraphEdgesRequest{})
+			result, err := c.Graph.Edge.GetByGraphID(context.Background(), graphID, req)
 			if err != nil {
 				return fmt.Errorf("listing edges: %w", err)
 			}
@@ -157,8 +168,8 @@ func init() {
 	// List flags
 	edgeListCmd.Flags().String("user", "", "List edges for user graph")
 	edgeListCmd.Flags().String("graph", "", "List edges for standalone graph")
-	edgeListCmd.Flags().Int("page", 1, "Page number")
-	edgeListCmd.Flags().Int("page-size", 50, "Results per page")
+	edgeListCmd.Flags().Int("limit", 50, "Maximum number of results to return")
+	edgeListCmd.Flags().String("cursor", "", "UUID cursor for pagination (last UUID from previous page)")
 
 	// Delete flags
 	edgeDeleteCmd.Flags().Bool("force", false, "Skip confirmation prompt")

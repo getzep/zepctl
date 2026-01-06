@@ -142,6 +142,18 @@ var graphCloneCmd = &cobra.Command{
 			return fmt.Errorf("either --source-user or --source-graph is required")
 		}
 
+		if sourceUser != "" && sourceGraph != "" {
+			return fmt.Errorf("--source-user and --source-graph are mutually exclusive")
+		}
+
+		if sourceUser != "" && targetGraph != "" {
+			return fmt.Errorf("--target-graph cannot be used with --source-user; use --target-user instead")
+		}
+
+		if sourceGraph != "" && targetUser != "" {
+			return fmt.Errorf("--target-user cannot be used with --source-graph; use --target-graph instead")
+		}
+
 		c, err := client.New()
 		if err != nil {
 			return err
@@ -358,21 +370,21 @@ var graphSearchCmd = &cobra.Command{
 			req.Reranker = &r
 		}
 
-		if mmrLambda > 0 {
+		if cmd.Flags().Changed("mmr-lambda") {
 			req.MmrLambda = zep.Float64(mmrLambda)
 		}
 
-		if minScore > 0 {
+		if cmd.Flags().Changed("min-score") {
 			req.MinScore = zep.Float64(minScore)
 		}
 
 		if excludeNodeLabels != "" || excludeEdgeTypes != "" {
 			req.SearchFilters = &zep.SearchFilters{}
 			if excludeNodeLabels != "" {
-				req.SearchFilters.NodeLabels = strings.Split(excludeNodeLabels, ",")
+				req.SearchFilters.ExcludeNodeLabels = strings.Split(excludeNodeLabels, ",")
 			}
 			if excludeEdgeTypes != "" {
-				req.SearchFilters.EdgeTypes = strings.Split(excludeEdgeTypes, ",")
+				req.SearchFilters.ExcludeEdgeTypes = strings.Split(excludeEdgeTypes, ",")
 			}
 		}
 

@@ -34,14 +34,25 @@ var nodeListCmd = &cobra.Command{
 
 		var nodes []*zep.EntityNode
 
+		limit, _ := cmd.Flags().GetInt("limit")
+		cursor, _ := cmd.Flags().GetString("cursor")
+
+		req := &zep.GraphNodesRequest{}
+		if limit > 0 {
+			req.Limit = zep.Int(limit)
+		}
+		if cursor != "" {
+			req.UUIDCursor = zep.String(cursor)
+		}
+
 		if userID != "" {
-			result, err := c.Graph.Node.GetByUserID(context.Background(), userID, &zep.GraphNodesRequest{})
+			result, err := c.Graph.Node.GetByUserID(context.Background(), userID, req)
 			if err != nil {
 				return fmt.Errorf("listing nodes: %w", err)
 			}
 			nodes = result
 		} else {
-			result, err := c.Graph.Node.GetByGraphID(context.Background(), graphID, &zep.GraphNodesRequest{})
+			result, err := c.Graph.Node.GetByGraphID(context.Background(), graphID, req)
 			if err != nil {
 				return fmt.Errorf("listing nodes: %w", err)
 			}
@@ -187,6 +198,6 @@ func init() {
 	// List flags
 	nodeListCmd.Flags().String("user", "", "List nodes for user graph")
 	nodeListCmd.Flags().String("graph", "", "List nodes for standalone graph")
-	nodeListCmd.Flags().Int("page", 1, "Page number")
-	nodeListCmd.Flags().Int("page-size", 50, "Results per page")
+	nodeListCmd.Flags().Int("limit", 50, "Maximum number of results to return")
+	nodeListCmd.Flags().String("cursor", "", "UUID cursor for pagination (last UUID from previous page)")
 }

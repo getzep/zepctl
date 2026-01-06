@@ -4,9 +4,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
+)
+
+var (
+	cachedConfig *Config
+	configOnce   sync.Once
+	configErr    error
 )
 
 // Profile represents a named configuration profile.
@@ -39,7 +46,16 @@ func GetConfigPath() (string, error) {
 }
 
 // Load loads the configuration from disk.
+// The config is cached after the first load for efficiency.
 func Load() (*Config, error) {
+	configOnce.Do(func() {
+		cachedConfig, configErr = loadFromDisk()
+	})
+	return cachedConfig, configErr
+}
+
+// loadFromDisk reads and parses the config file.
+func loadFromDisk() (*Config, error) {
 	path, err := GetConfigPath()
 	if err != nil {
 		return nil, err
@@ -66,7 +82,16 @@ func Load() (*Config, error) {
 	return &cfg, nil
 }
 
-// Save writes the configuration to disk.
+// Reload forces a reload of the configuration from disk.
+// This is useful after modifying the config file (e.g., adding a profile).
+func Reload() (*Config, error) {
+	configOnce = sync.Once{}
+	cachedConfig = nil
+	configErr = nil
+	return Load()
+}
+
+// Save writes the configuration to disk and updates the cache.
 func (c *Config) Save() error {
 	path, err := GetConfigPath()
 	if err != nil {
@@ -87,6 +112,8 @@ func (c *Config) Save() error {
 		return fmt.Errorf("writing config file: %w", err)
 	}
 
+	// Update cache to reflect saved changes
+	cachedConfig = c
 	return nil
 }
 

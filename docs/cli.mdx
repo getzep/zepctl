@@ -22,8 +22,8 @@ Download the appropriate binary for your platform from the [releases page](https
 ## Quick Start
 
 ```bash
-# Configure your API key
-zepctl config add-profile production --api-key YOUR_API_KEY
+# Configure your API key (you will be prompted to enter it securely)
+zepctl config add-profile production
 
 # Verify connection
 zepctl project get
@@ -86,8 +86,8 @@ zepctl config get-profiles
 # Switch active profile
 zepctl config use-profile <name>
 
-# Add a new profile
-zepctl config add-profile <name> [--api-key KEY] [--api-url URL]
+# Add a new profile (prompts for API key)
+zepctl config add-profile <name> [--api-url URL]
 
 # Remove a profile
 zepctl config delete-profile <name> [--force]
@@ -251,7 +251,7 @@ Manage graph nodes.
 
 ```bash
 # List nodes
-zepctl node list --user <user-id> [--page N] [--page-size N]
+zepctl node list --user <user-id> [--limit N] [--cursor UUID]
 zepctl node list --graph <graph-id>
 
 # Get node details
@@ -270,7 +270,7 @@ Manage graph edges (facts/relationships).
 
 ```bash
 # List edges
-zepctl edge list --user <user-id> [--page N] [--page-size N]
+zepctl edge list --user <user-id> [--limit N] [--cursor UUID]
 zepctl edge list --graph <graph-id>
 
 # Get edge details
@@ -286,7 +286,7 @@ Manage graph episodes (source data).
 
 ```bash
 # List episodes
-zepctl episode list --user <user-id> [--page N] [--page-size N] [--last N]
+zepctl episode list --user <user-id> [--last N]
 zepctl episode list --graph <graph-id>
 
 # Get episode details

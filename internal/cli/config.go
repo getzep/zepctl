@@ -9,6 +9,7 @@ import (
 	"github.com/getzep/zepctl/internal/config"
 	"github.com/getzep/zepctl/internal/output"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 var configCmd = &cobra.Command{
@@ -102,10 +103,24 @@ var configAddProfileCmd = &cobra.Command{
 		apiURL, _ := cmd.Flags().GetString("api-url")
 
 		if apiKey == "" {
-			reader := bufio.NewReader(os.Stdin)
 			fmt.Print("API Key: ")
-			apiKey, _ = reader.ReadString('\n')
+			if term.IsTerminal(int(os.Stdin.Fd())) {
+				keyBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
+				fmt.Println() // newline after hidden input
+				if err != nil {
+					return fmt.Errorf("reading API key: %w", err)
+				}
+				apiKey = string(keyBytes)
+			} else {
+				// Fallback for non-terminal input (piped)
+				reader := bufio.NewReader(os.Stdin)
+				apiKey, _ = reader.ReadString('\n')
+			}
 			apiKey = strings.TrimSpace(apiKey)
+		}
+
+		if apiKey == "" {
+			return fmt.Errorf("API key cannot be empty")
 		}
 
 		if apiURL == "" {

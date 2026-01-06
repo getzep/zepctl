@@ -79,48 +79,59 @@ var taskWaitCmd = &cobra.Command{
 			return err
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
-		defer cancel()
-
 		output.Info("Waiting for task %s...", taskID)
 
-		ticker := time.NewTicker(pollInterval)
-		defer ticker.Stop()
+		if err := waitForTask(c, taskID, timeout, pollInterval); err != nil {
+			return err
+		}
 
-		for {
-			select {
-			case <-ctx.Done():
-				return fmt.Errorf("timeout waiting for task %s", taskID)
-			case <-ticker.C:
-				task, err := c.Task.Get(ctx, taskID)
-				if err != nil {
-					return fmt.Errorf("getting task: %w", err)
-				}
+		output.Info("Task %s completed successfully", taskID)
+		return nil
+	},
+}
 
-				status := ""
-				if task.Status != nil {
-					status = *task.Status
-				}
+// Default task polling settings.
+const (
+	defaultTaskTimeout      = 5 * time.Minute
+	defaultTaskPollInterval = 1 * time.Second
+)
 
-				switch status {
-				case "completed":
-					output.Info("Task %s completed successfully", taskID)
-					if output.GetFormat() != output.FormatTable {
-						return output.Print(task)
-					}
-					return nil
-				case "failed":
-					errMsg := "unknown error"
-					if task.Error != nil && task.Error.Message != nil {
-						errMsg = *task.Error.Message
-					}
-					return fmt.Errorf("task %s failed: %s", taskID, errMsg)
-				default:
-					output.Info("Status: %s", status)
+// waitForTask polls the task status until completion or failure.
+// This is a shared helper used by commands that need to wait for async operations.
+func waitForTask(c *client.Client, taskID string, timeout, pollInterval time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timeout waiting for task %s", taskID)
+		case <-ticker.C:
+			task, err := c.Task.Get(ctx, taskID)
+			if err != nil {
+				return fmt.Errorf("getting task: %w", err)
+			}
+
+			status := ""
+			if task.Status != nil {
+				status = *task.Status
+			}
+
+			switch status {
+			case "completed":
+				return nil
+			case "failed":
+				errMsg := "unknown error"
+				if task.Error != nil && task.Error.Message != nil {
+					errMsg = *task.Error.Message
 				}
+				return fmt.Errorf("task %s failed: %s", taskID, errMsg)
 			}
 		}
-	},
+	}
 }
 
 func init() {
@@ -129,6 +140,6 @@ func init() {
 	taskCmd.AddCommand(taskWaitCmd)
 
 	// Wait flags
-	taskWaitCmd.Flags().Duration("timeout", 5*time.Minute, "Maximum wait time")
-	taskWaitCmd.Flags().Duration("poll-interval", 1*time.Second, "Polling interval")
+	taskWaitCmd.Flags().Duration("timeout", defaultTaskTimeout, "Maximum wait time")
+	taskWaitCmd.Flags().Duration("poll-interval", defaultTaskPollInterval, "Polling interval")
 }

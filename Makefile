@@ -96,7 +96,7 @@ clean:
 ## Install the binary locally
 install: build
 	@echo "Installing $(BINARY_NAME)..."
-	@cp $(BUILD_DIR)/$(BINARY_NAME) $(GOPATH)/bin/$(BINARY_NAME)
+	@cp $(BUILD_DIR)/$(BINARY_NAME) $(shell go env GOPATH)/bin/$(BINARY_NAME)
 
 ## Run GoReleaser in snapshot mode (for testing)
 release-snapshot:

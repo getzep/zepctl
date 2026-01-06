@@ -195,9 +195,7 @@ func init() {
 	// List flags
 	episodeListCmd.Flags().String("user", "", "List episodes for user graph")
 	episodeListCmd.Flags().String("graph", "", "List episodes for standalone graph")
-	episodeListCmd.Flags().Int("page", 1, "Page number")
-	episodeListCmd.Flags().Int("page-size", 50, "Results per page")
-	episodeListCmd.Flags().Int("last", 0, "Get last N episodes (shortcut, ignores pagination)")
+	episodeListCmd.Flags().Int("last", 0, "Get last N episodes")
 
 	// Delete flags
 	episodeDeleteCmd.Flags().Bool("force", false, "Skip confirmation prompt")
