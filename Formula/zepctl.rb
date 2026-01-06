@@ -2,8 +2,8 @@ class Zepctl < Formula
   desc "CLI for administering Zep projects"
   homepage "https://github.com/getzep/zepctl"
   url "https://github.com/getzep/zepctl.git",
-      tag:      "v0.0.7",
-      revision: "a054a2942944b51b2b1ea6cd26ee66ee87215458"
+      tag:      "v0.0.8",
+      revision: "78dfc1909498d4b755c223b500a3ebd867f5d99c"
   license "Apache-2.0"
   head "https://github.com/getzep/zepctl.git", branch: "main"
 
