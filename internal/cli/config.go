@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/getzep/zepctl/internal/config"
+	"github.com/getzep/zepctl/internal/keyring"
 	"github.com/getzep/zepctl/internal/output"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -123,13 +124,14 @@ var configAddProfileCmd = &cobra.Command{
 			return fmt.Errorf("API key cannot be empty")
 		}
 
-		if apiURL == "" {
-			apiURL = "https://api.getzep.com"
+		// Store API key in system keychain
+		if err := keyring.Set(name, apiKey); err != nil {
+			return fmt.Errorf("storing API key: %w", err)
 		}
 
+		// apiURL can be empty - the SDK will use its default
 		cfg.Profiles = append(cfg.Profiles, config.Profile{
 			Name:   name,
-			APIKey: apiKey,
 			APIURL: apiURL,
 		})
 
@@ -141,7 +143,7 @@ var configAddProfileCmd = &cobra.Command{
 			return fmt.Errorf("saving config: %w", err)
 		}
 
-		output.Info("Added profile %q", name)
+		output.Info("Added profile %q (API key stored in system keychain)", name)
 		return nil
 	},
 }
@@ -193,6 +195,11 @@ var configDeleteProfileCmd = &cobra.Command{
 			return fmt.Errorf("saving config: %w", err)
 		}
 
+		// Remove API key from keychain (best-effort, after config is saved)
+		if err := keyring.Delete(name); err != nil {
+			output.Warn("Could not remove API key from keychain: %v", err)
+		}
+
 		output.Info("Deleted profile %q", name)
 		return nil
 	},
@@ -207,6 +214,6 @@ func init() {
 	configCmd.AddCommand(configDeleteProfileCmd)
 
 	configAddProfileCmd.Flags().String("api-key", "", "API key for the profile")
-	configAddProfileCmd.Flags().String("api-url", "https://api.getzep.com", "API URL for the profile")
+	configAddProfileCmd.Flags().String("api-url", "", "API URL for the profile (uses SDK default if not set)")
 	configDeleteProfileCmd.Flags().Bool("force", false, "Skip confirmation prompt")
 }

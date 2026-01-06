@@ -22,15 +22,15 @@ Location: `~/.zepctl/config.yaml`
 current-profile: production
 profiles:
   - name: production
-    api-key: ${ZEP_API_KEY}  # Environment variable reference
-    api-url: https://api.getzep.com
+    # API keys are stored securely in the system keychain
   - name: development
-    api-key: zep_dev_xxxxx
-    api-url: https://api.dev.getzep.com
+    api-url: https://api.dev.getzep.com  # Optional: only if using non-default URL
 defaults:
   output: table
   page-size: 50
 ```
+
+**Credential Storage**: API keys are stored in the system keychain (macOS Keychain, Windows Credential Manager, or Linux Secret Service) rather than in the config file. For CI/CD environments without keychain access, use the `ZEP_API_KEY` environment variable.
 
 ### Environment Variables
 

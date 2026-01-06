@@ -122,6 +122,11 @@ func Info(format string, args ...any) {
 	}
 }
 
+// Warn prints a warning message.
+func Warn(format string, args ...any) {
+	fmt.Fprintf(os.Stderr, "Warning: "+format+"\n", args...)
+}
+
 // Error prints an error message.
 func Error(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "Error: "+format+"\n", args...)

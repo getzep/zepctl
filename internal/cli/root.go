@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -36,7 +37,7 @@ func init() {
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.zepctl/config.yaml)")
 	rootCmd.PersistentFlags().StringP("api-key", "k", "", "API key for authentication")
-	rootCmd.PersistentFlags().String("api-url", "https://api.getzep.com", "API endpoint URL")
+	rootCmd.PersistentFlags().String("api-url", "", "API endpoint URL (uses SDK default if not set)")
 	rootCmd.PersistentFlags().StringP("profile", "p", "", "Use specific profile")
 	rootCmd.PersistentFlags().StringP("output", "o", "table", "Output format: table, json, yaml, wide")
 	rootCmd.PersistentFlags().BoolP("quiet", "q", false, "Suppress non-essential output")
@@ -61,6 +62,7 @@ func initConfig() {
 	}
 
 	viper.SetEnvPrefix("ZEP")
+	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 	viper.AutomaticEnv()
 
 	if err := viper.ReadInConfig(); err == nil {
