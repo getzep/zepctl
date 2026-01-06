@@ -3,7 +3,7 @@ cask "zepctl" do
   name "zepctl"
   desc "CLI for administering Zep projects"
   homepage "https://github.com/getzep/zepctl"
-  version "0.0.3"
+  version "0.0.4"
 
   livecheck do
     skip "Auto-generated on release."
@@ -14,18 +14,18 @@ cask "zepctl" do
   on_macos do
     on_arm do
       url "https://github.com/getzep/zepctl/releases/download/v#{version}/zepctl_#{version}_darwin_arm64.tar.gz"
-      sha256 "a5bd6bc9fb9a5c69d2680fa6ee6d6b83e0d93cb38332625e33d651bf289106a1"
+      sha256 "a0a27349761ba8404e86fde303dd37ed8e72b5b5980ce50dc7010bc2943117ec"
     end
   end
 
   on_linux do
     on_intel do
       url "https://github.com/getzep/zepctl/releases/download/v#{version}/zepctl_#{version}_linux_amd64.tar.gz"
-      sha256 "2284a5ad52454d191272cf20ac6a54545e322007d6a8e300a35a825b5a1592ed"
+      sha256 "1dc60b0fbc669d9e9d1285eef0e11507f33bfb002b209a93ca40ed8fcb0928cf"
     end
     on_arm do
       url "https://github.com/getzep/zepctl/releases/download/v#{version}/zepctl_#{version}_linux_arm64.tar.gz"
-      sha256 "5f0e962c3c406b8bc8fa9fe7424714b81c004b7afb9fb11eb8ecd31224ca7455"
+      sha256 "a1659fc3b1d678211d032cf23a740957c0257b940a687fb2a1e6065b24864b57"
     end
   end
 
