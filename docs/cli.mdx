@@ -12,12 +12,18 @@ description: Command-line interface for administering Zep projects
 ### Homebrew (macOS/Linux)
 
 ```bash
-brew install getzep/zepctl/zepctl
+brew tap getzep/zepctl https://github.com/getzep/zepctl.git
+brew install zepctl
 ```
 
 ### Binary Download
 
 Download the appropriate binary for your platform from the [releases page](https://github.com/getzep/zepctl/releases).
+
+**macOS users:** If you see "zepctl cannot be opened because the developer cannot be verified", run:
+```bash
+xattr -d com.apple.quarantine /path/to/zepctl
+```
 
 ## Quick Start
 

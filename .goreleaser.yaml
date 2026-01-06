@@ -63,23 +63,6 @@ changelog:
       - Merge pull request
       - Merge branch
 
-# Homebrew cask publication (same repo as source)
-# Publishes directly to 'homebrew' branch, then creates PR to main
-homebrew_casks:
-  - name: zepctl
-    repository:
-      owner: getzep
-      name: zepctl
-      branch: homebrew
-      pull_request:
-        enabled: true
-        base:
-          branch: main
-    homepage: "https://github.com/getzep/zepctl"
-    description: "CLI for administering Zep projects"
-    binaries:
-      - zepctl
-
 # GitHub release
 release:
   github:
@@ -91,13 +74,19 @@ release:
   footer: |
     ## Installation
 
-    ### Homebrew (macOS)
+    ### Homebrew (macOS/Linux)
     ```bash
-    brew install getzep/zepctl/zepctl
+    brew tap getzep/zepctl https://github.com/getzep/zepctl.git
+    brew install zepctl
     ```
 
     ### Binary Download
     Download the appropriate binary for your platform from the assets below.
+
+    **macOS users:** If you see "zepctl cannot be opened because the developer cannot be verified", run:
+    ```bash
+    xattr -d com.apple.quarantine /path/to/zepctl
+    ```
 
     ### Verify Checksums
     ```bash
