@@ -21,6 +21,61 @@ var threadCmd = &cobra.Command{
 	Long:  `Create, get, delete threads and manage thread messages.`,
 }
 
+var threadListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List all threads",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := client.New()
+		if err != nil {
+			return err
+		}
+
+		page, _ := cmd.Flags().GetInt("page")
+		pageSize, _ := cmd.Flags().GetInt("page-size")
+		orderBy, _ := cmd.Flags().GetString("order-by")
+		asc, _ := cmd.Flags().GetBool("asc")
+
+		req := &zep.ThreadListAllRequest{
+			PageNumber: zep.Int(page),
+			PageSize:   zep.Int(pageSize),
+		}
+		if orderBy != "" {
+			req.OrderBy = zep.String(orderBy)
+		}
+		if cmd.Flags().Changed("asc") {
+			req.Asc = zep.Bool(asc)
+		}
+
+		threads, err := c.Thread.ListAll(context.Background(), req)
+		if err != nil {
+			return fmt.Errorf("listing threads: %w", err)
+		}
+
+		if output.GetFormat() == output.FormatTable {
+			tbl := output.NewTable("THREAD ID", "USER ID", "CREATED AT")
+			tbl.WriteHeader()
+			for _, t := range threads.Threads {
+				threadID := ""
+				if t.ThreadID != nil {
+					threadID = *t.ThreadID
+				}
+				userID := ""
+				if t.UserID != nil {
+					userID = *t.UserID
+				}
+				createdAt := ""
+				if t.CreatedAt != nil {
+					createdAt = *t.CreatedAt
+				}
+				tbl.WriteRow(threadID, userID, createdAt)
+			}
+			return tbl.Flush()
+		}
+
+		return output.Print(threads)
+	},
+}
+
 var threadCreateCmd = &cobra.Command{
 	Use:   "create <thread-id>",
 	Short: "Create a new thread",
@@ -309,12 +364,19 @@ var threadContextCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(threadCmd)
+	threadCmd.AddCommand(threadListCmd)
 	threadCmd.AddCommand(threadCreateCmd)
 	threadCmd.AddCommand(threadGetCmd)
 	threadCmd.AddCommand(threadDeleteCmd)
 	threadCmd.AddCommand(threadMessagesCmd)
 	threadCmd.AddCommand(threadAddMessagesCmd)
 	threadCmd.AddCommand(threadContextCmd)
+
+	// List flags
+	threadListCmd.Flags().Int("page", 1, "Page number")
+	threadListCmd.Flags().Int("page-size", 50, "Results per page")
+	threadListCmd.Flags().String("order-by", "", "Order by field (created_at, updated_at, user_id, thread_id)")
+	threadListCmd.Flags().Bool("asc", false, "Sort ascending")
 
 	// Create flags
 	threadCreateCmd.Flags().String("user", "", "User ID (required)")
