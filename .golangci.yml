@@ -29,6 +29,8 @@ linters:
     goconst:
       min-len: 2
       min-occurrences: 8
+      ignore-string-values:
+        - "yes"
     gocritic:
       enabled-tags:
         - diagnostic
