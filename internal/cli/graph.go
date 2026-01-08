@@ -322,11 +322,130 @@ var graphAddCmd = &cobra.Command{
 	},
 }
 
+var graphAddFactCmd = &cobra.Command{
+	Use:   "add-fact",
+	Short: "Add a fact triple to a graph",
+	Long: `Add a fact triple (source node -> edge -> target node) to a graph.
+
+Attributes can be specified as JSON objects for source node, edge, and target node.
+Example: --source-attrs '{"type": "Person", "age": 30}'`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		userID, _ := cmd.Flags().GetString("user")
+		graphID, _ := cmd.Flags().GetString("graph")
+		fact, _ := cmd.Flags().GetString("fact")
+		factName, _ := cmd.Flags().GetString("fact-name")
+		sourceNodeName, _ := cmd.Flags().GetString("source-node")
+		targetNodeName, _ := cmd.Flags().GetString("target-node")
+		validAt, _ := cmd.Flags().GetString("valid-at")
+		invalidAt, _ := cmd.Flags().GetString("invalid-at")
+		sourceAttrsStr, _ := cmd.Flags().GetString("source-attrs")
+		edgeAttrsStr, _ := cmd.Flags().GetString("edge-attrs")
+		targetAttrsStr, _ := cmd.Flags().GetString("target-attrs")
+
+		if userID == "" && graphID == "" {
+			return fmt.Errorf("either --user or --graph is required")
+		}
+
+		if fact == "" {
+			return fmt.Errorf("--fact is required")
+		}
+		if factName == "" {
+			return fmt.Errorf("--fact-name is required")
+		}
+		if sourceNodeName == "" {
+			return fmt.Errorf("--source-node is required")
+		}
+		if targetNodeName == "" {
+			return fmt.Errorf("--target-node is required")
+		}
+
+		c, err := client.New()
+		if err != nil {
+			return err
+		}
+
+		req := &zep.AddTripleRequest{
+			Fact:           fact,
+			FactName:       factName,
+			SourceNodeName: zep.String(sourceNodeName),
+			TargetNodeName: zep.String(targetNodeName),
+		}
+
+		if userID != "" {
+			req.UserID = zep.String(userID)
+		} else {
+			req.GraphID = zep.String(graphID)
+		}
+
+		if validAt != "" {
+			req.ValidAt = zep.String(validAt)
+		}
+
+		if invalidAt != "" {
+			req.InvalidAt = zep.String(invalidAt)
+		}
+
+		// Parse source node attributes
+		if sourceAttrsStr != "" {
+			var sourceAttrs map[string]interface{}
+			if err := json.Unmarshal([]byte(sourceAttrsStr), &sourceAttrs); err != nil {
+				return fmt.Errorf("parsing source-attrs: %w", err)
+			}
+			req.SourceNodeAttributes = sourceAttrs
+		}
+
+		// Parse edge attributes
+		if edgeAttrsStr != "" {
+			var edgeAttrs map[string]interface{}
+			if err := json.Unmarshal([]byte(edgeAttrsStr), &edgeAttrs); err != nil {
+				return fmt.Errorf("parsing edge-attrs: %w", err)
+			}
+			req.EdgeAttributes = edgeAttrs
+		}
+
+		// Parse target node attributes
+		if targetAttrsStr != "" {
+			var targetAttrs map[string]interface{}
+			if err := json.Unmarshal([]byte(targetAttrsStr), &targetAttrs); err != nil {
+				return fmt.Errorf("parsing target-attrs: %w", err)
+			}
+			req.TargetNodeAttributes = targetAttrs
+		}
+
+		resp, err := c.Graph.AddFactTriple(context.Background(), req)
+		if err != nil {
+			return fmt.Errorf("adding fact triple: %w", err)
+		}
+
+		output.Info("Added fact triple")
+		return output.Print(resp)
+	},
+}
+
 var graphSearchCmd = &cobra.Command{
 	Use:   "search <query>",
 	Short: "Search a graph",
-	Long:  `Search a user graph or standalone graph for edges, nodes, or episodes.`,
-	Args:  cobra.ExactArgs(1),
+	Long: `Search a user graph or standalone graph for edges, nodes, or episodes.
+
+Property filters allow filtering by node/edge attributes:
+  --property-filter "property_name:operator:value"
+
+  Operators: =, <>, >, <, >=, <=, IS NULL, IS NOT NULL
+
+  Examples:
+    --property-filter "age:>:30"
+    --property-filter "status:=:active"
+    --property-filter "deleted_at:IS NULL"
+    --property-filter "verified:IS NOT NULL"
+
+Date filters allow filtering by date fields (created_at, valid_at, invalid_at, expired_at):
+  --date-filter "field:operator:date"
+
+  Examples:
+    --date-filter "created_at:>:2024-01-01"
+    --date-filter "valid_at:IS NULL"
+    --date-filter "invalid_at:IS NOT NULL"`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		query := args[0]
 
@@ -339,6 +458,10 @@ var graphSearchCmd = &cobra.Command{
 		minScore, _ := cmd.Flags().GetFloat64("min-score")
 		excludeNodeLabels, _ := cmd.Flags().GetString("exclude-node-labels")
 		excludeEdgeTypes, _ := cmd.Flags().GetString("exclude-edge-types")
+		nodeLabels, _ := cmd.Flags().GetString("node-labels")
+		edgeTypes, _ := cmd.Flags().GetString("edge-types")
+		propertyFilters, _ := cmd.Flags().GetStringArray("property-filter")
+		dateFilters, _ := cmd.Flags().GetStringArray("date-filter")
 
 		if userID == "" && graphID == "" {
 			return fmt.Errorf("either --user or --graph is required")
@@ -378,13 +501,43 @@ var graphSearchCmd = &cobra.Command{
 			req.MinScore = zep.Float64(minScore)
 		}
 
-		if excludeNodeLabels != "" || excludeEdgeTypes != "" {
-			req.SearchFilters = &zep.SearchFilters{}
+		// Build search filters
+		hasFilters := excludeNodeLabels != "" || excludeEdgeTypes != "" ||
+			nodeLabels != "" || edgeTypes != "" ||
+			len(propertyFilters) > 0 || len(dateFilters) > 0
+
+		if hasFilters {
+			if req.SearchFilters == nil {
+				req.SearchFilters = &zep.SearchFilters{}
+			}
+
 			if excludeNodeLabels != "" {
 				req.SearchFilters.ExcludeNodeLabels = strings.Split(excludeNodeLabels, ",")
 			}
 			if excludeEdgeTypes != "" {
 				req.SearchFilters.ExcludeEdgeTypes = strings.Split(excludeEdgeTypes, ",")
+			}
+			if nodeLabels != "" {
+				req.SearchFilters.NodeLabels = strings.Split(nodeLabels, ",")
+			}
+			if edgeTypes != "" {
+				req.SearchFilters.EdgeTypes = strings.Split(edgeTypes, ",")
+			}
+
+			// Parse property filters
+			if len(propertyFilters) > 0 {
+				parsedFilters, err := parsePropertyFilters(propertyFilters)
+				if err != nil {
+					return err
+				}
+				req.SearchFilters.PropertyFilters = parsedFilters
+			}
+
+			// Parse date filters
+			if len(dateFilters) > 0 {
+				if err := parseDateFilters(dateFilters, req.SearchFilters); err != nil {
+					return err
+				}
 			}
 		}
 
@@ -431,6 +584,179 @@ var graphSearchCmd = &cobra.Command{
 	},
 }
 
+// parsePropertyFilters parses property filter strings into PropertyFilter objects.
+// Format: "property_name:operator:value" or "property_name:IS NULL" / "property_name:IS NOT NULL".
+func parsePropertyFilters(filters []string) ([]*zep.PropertyFilter, error) {
+	var result []*zep.PropertyFilter
+
+	for _, f := range filters {
+		pf, err := parsePropertyFilter(f)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, pf)
+	}
+
+	return result, nil
+}
+
+func parsePropertyFilter(filter string) (*zep.PropertyFilter, error) {
+	// Check for IS NULL / IS NOT NULL operators first
+	if strings.Contains(filter, ":IS NOT NULL") {
+		parts := strings.SplitN(filter, ":IS NOT NULL", 2)
+		if len(parts) < 1 || parts[0] == "" {
+			return nil, fmt.Errorf("invalid property filter format: %q", filter)
+		}
+		return &zep.PropertyFilter{
+			PropertyName:       parts[0],
+			ComparisonOperator: zep.ComparisonOperatorIsNotNull,
+		}, nil
+	}
+
+	if strings.Contains(filter, ":IS NULL") {
+		parts := strings.SplitN(filter, ":IS NULL", 2)
+		if len(parts) < 1 || parts[0] == "" {
+			return nil, fmt.Errorf("invalid property filter format: %q", filter)
+		}
+		return &zep.PropertyFilter{
+			PropertyName:       parts[0],
+			ComparisonOperator: zep.ComparisonOperatorIsNull,
+		}, nil
+	}
+
+	// Parse format: "property_name:operator:value"
+	parts := strings.SplitN(filter, ":", 3)
+	if len(parts) != 3 {
+		return nil, fmt.Errorf("invalid property filter format: %q (expected property_name:operator:value)", filter)
+	}
+
+	propName := parts[0]
+	opStr := parts[1]
+	valueStr := parts[2]
+
+	op, err := parseComparisonOperator(opStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid operator in property filter %q: %w", filter, err)
+	}
+
+	// Parse the value - try to detect type
+	var value interface{}
+	if valueStr == "true" {
+		value = true
+	} else if valueStr == "false" {
+		value = false
+	} else if valueStr == "null" || valueStr == "" {
+		value = nil
+	} else if i, err := json.Number(valueStr).Int64(); err == nil {
+		value = i
+	} else if f, err := json.Number(valueStr).Float64(); err == nil {
+		value = f
+	} else {
+		value = valueStr
+	}
+
+	return &zep.PropertyFilter{
+		PropertyName:       propName,
+		ComparisonOperator: op,
+		PropertyValue:      value,
+	}, nil
+}
+
+func parseComparisonOperator(op string) (zep.ComparisonOperator, error) {
+	switch op {
+	case "=", "==":
+		return zep.ComparisonOperatorEquals, nil
+	case "<>", "!=":
+		return zep.ComparisonOperatorNotEquals, nil
+	case ">":
+		return zep.ComparisonOperatorGreaterThan, nil
+	case "<":
+		return zep.ComparisonOperatorLessThan, nil
+	case ">=":
+		return zep.ComparisonOperatorGreaterThanEqual, nil
+	case "<=":
+		return zep.ComparisonOperatorLessThanEqual, nil
+	case "IS NULL":
+		return zep.ComparisonOperatorIsNull, nil
+	case "IS NOT NULL":
+		return zep.ComparisonOperatorIsNotNull, nil
+	default:
+		return "", fmt.Errorf("unknown operator: %s", op)
+	}
+}
+
+// parseDateFilters parses date filter strings and adds them to SearchFilters.
+// Format: "field:operator:date" or "field:IS NULL" / "field:IS NOT NULL".
+// Fields: created_at, valid_at, invalid_at, expired_at.
+func parseDateFilters(filters []string, sf *zep.SearchFilters) error {
+	for _, f := range filters {
+		if err := parseDateFilter(f, sf); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func parseDateFilter(filter string, sf *zep.SearchFilters) error {
+	// Check for IS NULL / IS NOT NULL operators first
+	if strings.Contains(filter, ":IS NOT NULL") {
+		parts := strings.SplitN(filter, ":IS NOT NULL", 2)
+		if len(parts) < 1 || parts[0] == "" {
+			return fmt.Errorf("invalid date filter format: %q", filter)
+		}
+		return addDateFilter(parts[0], zep.ComparisonOperatorIsNotNull, nil, sf)
+	}
+
+	if strings.Contains(filter, ":IS NULL") {
+		parts := strings.SplitN(filter, ":IS NULL", 2)
+		if len(parts) < 1 || parts[0] == "" {
+			return fmt.Errorf("invalid date filter format: %q", filter)
+		}
+		return addDateFilter(parts[0], zep.ComparisonOperatorIsNull, nil, sf)
+	}
+
+	// Parse format: "field:operator:date"
+	parts := strings.SplitN(filter, ":", 3)
+	if len(parts) != 3 {
+		return fmt.Errorf("invalid date filter format: %q (expected field:operator:date)", filter)
+	}
+
+	field := parts[0]
+	opStr := parts[1]
+	dateStr := parts[2]
+
+	op, err := parseComparisonOperator(opStr)
+	if err != nil {
+		return fmt.Errorf("invalid operator in date filter %q: %w", filter, err)
+	}
+
+	return addDateFilter(field, op, &dateStr, sf)
+}
+
+func addDateFilter(field string, op zep.ComparisonOperator, date *string, sf *zep.SearchFilters) error {
+	df := &zep.DateFilter{
+		ComparisonOperator: op,
+		Date:               date,
+	}
+
+	// Date filters use a 2D array where outer = OR, inner = AND
+	// For simplicity, each filter creates a new OR group with single element
+	switch field {
+	case "created_at":
+		sf.CreatedAt = append(sf.CreatedAt, []*zep.DateFilter{df})
+	case "valid_at":
+		sf.ValidAt = append(sf.ValidAt, []*zep.DateFilter{df})
+	case "invalid_at":
+		sf.InvalidAt = append(sf.InvalidAt, []*zep.DateFilter{df})
+	case "expired_at":
+		sf.ExpiredAt = append(sf.ExpiredAt, []*zep.DateFilter{df})
+	default:
+		return fmt.Errorf("unknown date field: %s (valid: created_at, valid_at, invalid_at, expired_at)", field)
+	}
+
+	return nil
+}
+
 func init() {
 	rootCmd.AddCommand(graphCmd)
 	graphCmd.AddCommand(graphListCmd)
@@ -438,6 +764,7 @@ func init() {
 	graphCmd.AddCommand(graphDeleteCmd)
 	graphCmd.AddCommand(graphCloneCmd)
 	graphCmd.AddCommand(graphAddCmd)
+	graphCmd.AddCommand(graphAddFactCmd)
 	graphCmd.AddCommand(graphSearchCmd)
 
 	// List flags
@@ -463,6 +790,19 @@ func init() {
 	graphAddCmd.Flags().Bool("batch", false, "Enable batch processing (up to 20 episodes)")
 	graphAddCmd.Flags().Bool("wait", false, "Wait for ingestion to complete")
 
+	// Add-fact flags
+	graphAddFactCmd.Flags().String("user", "", "Add to user graph")
+	graphAddFactCmd.Flags().String("graph", "", "Add to standalone graph")
+	graphAddFactCmd.Flags().String("fact", "", "The fact relating the two nodes (required)")
+	graphAddFactCmd.Flags().String("fact-name", "", "Edge name, should be UPPER_SNAKE_CASE (required)")
+	graphAddFactCmd.Flags().String("source-node", "", "Source node name (required)")
+	graphAddFactCmd.Flags().String("target-node", "", "Target node name (required)")
+	graphAddFactCmd.Flags().String("valid-at", "", "When the fact becomes true (ISO 8601)")
+	graphAddFactCmd.Flags().String("invalid-at", "", "When the fact stops being true (ISO 8601)")
+	graphAddFactCmd.Flags().String("source-attrs", "", "Source node attributes as JSON")
+	graphAddFactCmd.Flags().String("edge-attrs", "", "Edge attributes as JSON")
+	graphAddFactCmd.Flags().String("target-attrs", "", "Target node attributes as JSON")
+
 	// Search flags
 	graphSearchCmd.Flags().String("user", "", "Search user graph")
 	graphSearchCmd.Flags().String("graph", "", "Search standalone graph")
@@ -473,4 +813,8 @@ func init() {
 	graphSearchCmd.Flags().Float64("min-score", 0, "Minimum relevance score")
 	graphSearchCmd.Flags().String("exclude-node-labels", "", "Comma-separated node labels to exclude")
 	graphSearchCmd.Flags().String("exclude-edge-types", "", "Comma-separated edge types to exclude")
+	graphSearchCmd.Flags().String("node-labels", "", "Comma-separated node labels to include")
+	graphSearchCmd.Flags().String("edge-types", "", "Comma-separated edge types to include")
+	graphSearchCmd.Flags().StringArray("property-filter", nil, "Property filter (can be repeated): property:op:value or property:IS NULL")
+	graphSearchCmd.Flags().StringArray("date-filter", nil, "Date filter (can be repeated): field:op:date or field:IS NULL")
 }

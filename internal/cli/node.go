@@ -1,8 +1,11 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/getzep/zep-go/v3"
 	"github.com/getzep/zepctl/internal/client"
@@ -188,16 +191,53 @@ var nodeEpisodesCmd = &cobra.Command{
 	},
 }
 
+var nodeDeleteCmd = &cobra.Command{
+	Use:   "delete <uuid>",
+	Short: "Delete a node",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		uuid := args[0]
+		force, _ := cmd.Flags().GetBool("force")
+
+		if !force {
+			fmt.Printf("Delete node %q? [y/N]: ", uuid)
+			reader := bufio.NewReader(os.Stdin)
+			response, _ := reader.ReadString('\n')
+			response = strings.TrimSpace(strings.ToLower(response))
+			if response != "y" && response != "yes" {
+				output.Info("Aborted")
+				return nil
+			}
+		}
+
+		c, err := client.New()
+		if err != nil {
+			return err
+		}
+
+		if _, err := c.Graph.Node.Delete(context.Background(), uuid); err != nil {
+			return fmt.Errorf("deleting node: %w", err)
+		}
+
+		output.Info("Deleted node %q", uuid)
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(nodeCmd)
 	nodeCmd.AddCommand(nodeListCmd)
 	nodeCmd.AddCommand(nodeGetCmd)
 	nodeCmd.AddCommand(nodeEdgesCmd)
 	nodeCmd.AddCommand(nodeEpisodesCmd)
+	nodeCmd.AddCommand(nodeDeleteCmd)
 
 	// List flags
 	nodeListCmd.Flags().String("user", "", "List nodes for user graph")
 	nodeListCmd.Flags().String("graph", "", "List nodes for standalone graph")
 	nodeListCmd.Flags().Int("limit", 50, "Maximum number of results to return")
 	nodeListCmd.Flags().String("cursor", "", "UUID cursor for pagination (last UUID from previous page)")
+
+	// Delete flags
+	nodeDeleteCmd.Flags().Bool("force", false, "Skip confirmation prompt")
 }

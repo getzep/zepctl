@@ -225,9 +225,19 @@ zepctl graph add <graph-id> --type text --data "User prefers dark mode"
 zepctl graph add --user <user-id> --type json --file data.json
 zepctl graph add --user <user-id> --batch --file episodes.json --wait
 
+# Add a fact triple to a graph
+zepctl graph add-fact --user <user-id> --fact "Alice knows Bob" --fact-name KNOWS \
+  --source-node "Alice" --target-node "Bob"
+zepctl graph add-fact --graph <graph-id> --fact "Alice works at Acme" --fact-name WORKS_AT \
+  --source-node "Alice" --target-node "Acme" \
+  --source-attrs '{"role": "engineer"}' --edge-attrs '{"since": "2020"}' \
+  --target-attrs '{"industry": "tech"}'
+
 # Search a graph
 zepctl graph search "query" --user <user-id> --scope edges
 zepctl graph search "query" --graph <graph-id> --scope nodes --limit 20
+zepctl graph search "query" --user <user-id> --property-filter "status:=:active"
+zepctl graph search "query" --user <user-id> --date-filter "created_at:>:2024-01-01"
 ```
 
 #### Add Data Flags
@@ -242,6 +252,22 @@ zepctl graph search "query" --graph <graph-id> --scope nodes --limit 20
 | `--batch` | Enable batch processing |
 | `--wait` | Wait for ingestion to complete |
 
+#### Add Fact Flags
+
+| Flag | Description |
+|------|-------------|
+| `--user` | Add to user graph |
+| `--graph` | Add to standalone graph |
+| `--fact` | The fact relating the two nodes (required) |
+| `--fact-name` | Edge name, should be UPPER_SNAKE_CASE (required) |
+| `--source-node` | Source node name (required) |
+| `--target-node` | Target node name (required) |
+| `--valid-at` | When the fact becomes true (ISO 8601) |
+| `--invalid-at` | When the fact stops being true (ISO 8601) |
+| `--source-attrs` | Source node attributes as JSON |
+| `--edge-attrs` | Edge attributes as JSON |
+| `--target-attrs` | Target node attributes as JSON |
+
 #### Search Flags
 
 | Flag | Description |
@@ -253,8 +279,38 @@ zepctl graph search "query" --graph <graph-id> --scope nodes --limit 20
 | `--reranker` | Reranker: `rrf`, `mmr`, `cross_encoder` |
 | `--mmr-lambda` | MMR diversity/relevance balance (0-1) |
 | `--min-score` | Minimum relevance score |
+| `--node-labels` | Comma-separated node labels to include |
+| `--edge-types` | Comma-separated edge types to include |
 | `--exclude-node-labels` | Comma-separated node labels to exclude |
 | `--exclude-edge-types` | Comma-separated edge types to exclude |
+| `--property-filter` | Property filter (repeatable): `property:op:value` or `property:IS NULL` |
+| `--date-filter` | Date filter (repeatable): `field:op:date` or `field:IS NULL` |
+
+#### Property Filter Syntax
+
+Property filters allow filtering by node/edge attributes:
+
+```bash
+--property-filter "property_name:operator:value"
+--property-filter "property_name:IS NULL"
+--property-filter "property_name:IS NOT NULL"
+```
+
+Supported operators: `=`, `==`, `<>`, `!=`, `>`, `<`, `>=`, `<=`, `IS NULL`, `IS NOT NULL`
+
+Values are automatically parsed as boolean (`true`/`false`), integer, float, or string.
+
+#### Date Filter Syntax
+
+Date filters allow filtering by temporal fields:
+
+```bash
+--date-filter "field:operator:date"
+--date-filter "field:IS NULL"
+--date-filter "field:IS NOT NULL"
+```
+
+Supported fields: `created_at`, `valid_at`, `invalid_at`, `expired_at`
 
 #### Batch Episode Format
 
@@ -285,6 +341,9 @@ zepctl node edges <uuid>
 
 # Get node episodes
 zepctl node episodes <uuid>
+
+# Delete a node
+zepctl node delete <uuid> [--force]
 ```
 
 ### edge
@@ -446,6 +505,22 @@ zepctl graph search "critical decisions" --user user_123 --reranker cross_encode
 # Search nodes excluding certain labels
 zepctl graph search "product" --graph graph_456 --scope nodes \
   --exclude-node-labels "Assistant,Document"
+
+# Search with property filters
+zepctl graph search "query" --user user_123 \
+  --property-filter "status:=:active" \
+  --property-filter "age:>:30"
+
+# Search for edges with null validity dates
+zepctl graph search "query" --user user_123 \
+  --date-filter "valid_at:IS NULL" \
+  --date-filter "created_at:>:2024-01-01"
+
+# Combine multiple filter types
+zepctl graph search "preferences" --user user_123 \
+  --node-labels "Person,Product" \
+  --property-filter "verified:=:true" \
+  --date-filter "expired_at:IS NULL"
 ```
 
 ## Output Formats
