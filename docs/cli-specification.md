@@ -346,7 +346,6 @@ zepctl graph search <query> [flags]
 | `--limit` | Maximum results (default: 10) |
 | `--reranker` | Reranker: `rrf`, `mmr`, `cross_encoder` |
 | `--mmr-lambda` | MMR diversity/relevance balance (0-1) |
-| `--min-fact-rating` | Minimum fact rating to filter results |
 | `--exclude-node-labels` | Comma-separated node labels to exclude |
 | `--exclude-edge-types` | Comma-separated edge types to exclude |
 

@@ -112,7 +112,7 @@ req := &zep.GraphNodesRequest{
 When implementing exclusion filters, use the correct SDK fields:
 - `ExcludeNodeLabels` (not `NodeLabels`) for `--exclude-node-labels` flag
 - `ExcludeEdgeTypes` (not `EdgeTypes`) for `--exclude-edge-types` flag
-- `MinScore` is deprecated and has no effect; use `MinFactRating` instead
+- `MinScore` and `MinFactRating` are both deprecated and have no effect; rely on default relevance ranking
 
 ## Output Formatting
 
