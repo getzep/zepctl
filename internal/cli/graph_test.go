@@ -347,7 +347,7 @@ func TestGraphSearchMinScoreDeprecated(t *testing.T) {
 	if err := graphSearchCmd.Flags().Set("min-score", "0.5"); err != nil {
 		t.Fatalf("failed to set min-score flag: %v", err)
 	}
-	defer graphSearchCmd.Flags().Set("min-score", "0") //nolint:errcheck
+	defer graphSearchCmd.Flags().Set("min-score", "0") //nolint:errcheck // reset flag for other tests
 
 	err := graphSearchCmd.RunE(graphSearchCmd, []string{"test query"})
 	if err == nil {
@@ -362,7 +362,7 @@ func TestGraphSearchMinFactRatingDeprecated(t *testing.T) {
 	if err := graphSearchCmd.Flags().Set("min-fact-rating", "0.5"); err != nil {
 		t.Fatalf("failed to set min-fact-rating flag: %v", err)
 	}
-	defer graphSearchCmd.Flags().Set("min-fact-rating", "0") //nolint:errcheck
+	defer graphSearchCmd.Flags().Set("min-fact-rating", "0") //nolint:errcheck // reset flag for other tests
 
 	err := graphSearchCmd.RunE(graphSearchCmd, []string{"test query"})
 	if err == nil {
