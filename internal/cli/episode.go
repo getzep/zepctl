@@ -118,9 +118,6 @@ var episodeGetCmd = &cobra.Command{
 			if episode.Role != nil {
 				tbl.WriteRow("Role", *episode.Role)
 			}
-			if episode.RoleType != nil {
-				tbl.WriteRow("Role Type", string(*episode.RoleType))
-			}
 			tbl.WriteRow("Content", episode.Content)
 			tbl.WriteRow("Created At", episode.CreatedAt)
 			return tbl.Flush()
