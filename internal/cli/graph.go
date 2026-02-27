@@ -455,7 +455,6 @@ Date filters allow filtering by date fields (created_at, valid_at, invalid_at, e
 		limit, _ := cmd.Flags().GetInt("limit")
 		reranker, _ := cmd.Flags().GetString("reranker")
 		mmrLambda, _ := cmd.Flags().GetFloat64("mmr-lambda")
-		minScore, _ := cmd.Flags().GetFloat64("min-score")
 		excludeNodeLabels, _ := cmd.Flags().GetString("exclude-node-labels")
 		excludeEdgeTypes, _ := cmd.Flags().GetString("exclude-edge-types")
 		nodeLabels, _ := cmd.Flags().GetString("node-labels")
@@ -495,10 +494,6 @@ Date filters allow filtering by date fields (created_at, valid_at, invalid_at, e
 
 		if cmd.Flags().Changed("mmr-lambda") {
 			req.MmrLambda = zep.Float64(mmrLambda)
-		}
-
-		if cmd.Flags().Changed("min-score") {
-			req.MinScore = zep.Float64(minScore)
 		}
 
 		// Build search filters
@@ -810,7 +805,6 @@ func init() {
 	graphSearchCmd.Flags().Int("limit", 10, "Maximum results")
 	graphSearchCmd.Flags().String("reranker", "", "Reranker: rrf, mmr, cross_encoder")
 	graphSearchCmd.Flags().Float64("mmr-lambda", 0, "MMR diversity/relevance balance (0-1)")
-	graphSearchCmd.Flags().Float64("min-score", 0, "Minimum relevance score")
 	graphSearchCmd.Flags().String("exclude-node-labels", "", "Comma-separated node labels to exclude")
 	graphSearchCmd.Flags().String("exclude-edge-types", "", "Comma-separated edge types to exclude")
 	graphSearchCmd.Flags().String("node-labels", "", "Comma-separated node labels to include")
