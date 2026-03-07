@@ -638,7 +638,7 @@ multi-hop paths, co-occurrences, hubs, and clusters.`,
 		if recencyWeight != "" {
 			rw, err := zep.NewRecencyWeightFromString(recencyWeight)
 			if err != nil {
-				return fmt.Errorf("invalid recency-weight: %w", err)
+				return fmt.Errorf("invalid recency-weight %q (valid: none, 7_days, 30_days, 90_days): %w", recencyWeight, err)
 			}
 			req.RecencyWeight = rw.Ptr()
 		}
