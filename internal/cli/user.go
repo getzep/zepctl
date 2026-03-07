@@ -31,11 +31,25 @@ var userListCmd = &cobra.Command{
 
 		page, _ := cmd.Flags().GetInt("page")
 		pageSize, _ := cmd.Flags().GetInt("page-size")
+		search, _ := cmd.Flags().GetString("search")
+		orderBy, _ := cmd.Flags().GetString("order-by")
+		asc, _ := cmd.Flags().GetBool("asc")
 
-		users, err := c.User.ListOrdered(context.Background(), &zep.UserListOrderedRequest{
+		req := &zep.UserListOrderedRequest{
 			PageNumber: zep.Int(page),
 			PageSize:   zep.Int(pageSize),
-		})
+		}
+		if search != "" {
+			req.Search = zep.String(search)
+		}
+		if orderBy != "" {
+			req.OrderBy = zep.String(orderBy)
+		}
+		if cmd.Flags().Changed("asc") {
+			req.Asc = zep.Bool(asc)
+		}
+
+		users, err := c.User.ListOrdered(context.Background(), req)
 		if err != nil {
 			return fmt.Errorf("listing users: %w", err)
 		}
@@ -340,6 +354,9 @@ func init() {
 	// List flags
 	userListCmd.Flags().Int("page", 1, "Page number")
 	userListCmd.Flags().Int("page-size", 50, "Results per page")
+	userListCmd.Flags().String("search", "", "Search by user_id, name, or email")
+	userListCmd.Flags().String("order-by", "", "Sort by column (created_at, user_id, email)")
+	userListCmd.Flags().Bool("asc", false, "Sort ascending")
 
 	// Create flags
 	userCreateCmd.Flags().String("email", "", "User email address")

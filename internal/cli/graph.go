@@ -32,11 +32,21 @@ var graphListCmd = &cobra.Command{
 
 		page, _ := cmd.Flags().GetInt("page")
 		pageSize, _ := cmd.Flags().GetInt("page-size")
+		orderBy, _ := cmd.Flags().GetString("order-by")
+		asc, _ := cmd.Flags().GetBool("asc")
 
-		graphs, err := c.Graph.ListAll(context.Background(), &zep.GraphListAllRequest{
+		req := &zep.GraphListAllRequest{
 			PageNumber: zep.Int(page),
 			PageSize:   zep.Int(pageSize),
-		})
+		}
+		if orderBy != "" {
+			req.OrderBy = zep.String(orderBy)
+		}
+		if cmd.Flags().Changed("asc") {
+			req.Asc = zep.Bool(asc)
+		}
+
+		graphs, err := c.Graph.ListAll(context.Background(), req)
 		if err != nil {
 			return fmt.Errorf("listing graphs: %w", err)
 		}
@@ -341,6 +351,8 @@ Example: --source-attrs '{"type": "Person", "age": 30}'`,
 		sourceAttrsStr, _ := cmd.Flags().GetString("source-attrs")
 		edgeAttrsStr, _ := cmd.Flags().GetString("edge-attrs")
 		targetAttrsStr, _ := cmd.Flags().GetString("target-attrs")
+		sourceLabelsStr, _ := cmd.Flags().GetString("source-labels")
+		targetLabelsStr, _ := cmd.Flags().GetString("target-labels")
 
 		if userID == "" && graphID == "" {
 			return fmt.Errorf("either --user or --graph is required")
@@ -383,6 +395,13 @@ Example: --source-attrs '{"type": "Person", "age": 30}'`,
 
 		if invalidAt != "" {
 			req.InvalidAt = zep.String(invalidAt)
+		}
+
+		if sourceLabelsStr != "" {
+			req.SourceNodeLabels = strings.Split(sourceLabelsStr, ",")
+		}
+		if targetLabelsStr != "" {
+			req.TargetNodeLabels = strings.Split(targetLabelsStr, ",")
 		}
 
 		// Parse source node attributes
@@ -461,10 +480,6 @@ Date filters allow filtering by date fields (created_at, valid_at, invalid_at, e
 		edgeTypes, _ := cmd.Flags().GetString("edge-types")
 		propertyFilters, _ := cmd.Flags().GetStringArray("property-filter")
 		dateFilters, _ := cmd.Flags().GetStringArray("date-filter")
-
-		if cmd.Flags().Changed("min-score") || cmd.Flags().Changed("min-fact-rating") {
-			return fmt.Errorf("--min-score and --min-fact-rating are deprecated and have no effect; rely on default relevance ranking instead")
-		}
 
 		if userID == "" && graphID == "" {
 			return fmt.Errorf("either --user or --graph is required")
@@ -575,6 +590,103 @@ Date filters allow filtering by date fields (created_at, valid_at, invalid_at, e
 					summary = summary[:50] + "..."
 				}
 				tbl.WriteRow(n.UUID, n.Name, summary)
+			}
+			return tbl.Flush()
+		}
+
+		return output.Print(resp)
+	},
+}
+
+var graphDetectPatternsCmd = &cobra.Command{
+	Use:   "detect-patterns",
+	Short: "Detect structural patterns in a graph",
+	Long: `Detects structural patterns in a knowledge graph including relationship frequencies,
+multi-hop paths, co-occurrences, hubs, and clusters.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		userID, _ := cmd.Flags().GetString("user")
+		graphID, _ := cmd.Flags().GetString("graph")
+		limit, _ := cmd.Flags().GetInt("limit")
+		minOccurrences, _ := cmd.Flags().GetInt("min-occurrences")
+		recencyWeight, _ := cmd.Flags().GetString("recency-weight")
+		includeExamples, _ := cmd.Flags().GetBool("include-examples")
+		nodeLabels, _ := cmd.Flags().GetString("node-labels")
+		edgeTypes, _ := cmd.Flags().GetString("edge-types")
+		nodeUUIDs, _ := cmd.Flags().GetString("node-uuids")
+
+		if userID == "" && graphID == "" {
+			return fmt.Errorf("either --user or --graph is required")
+		}
+
+		c, err := client.New()
+		if err != nil {
+			return err
+		}
+
+		req := &zep.DetectPatternsRequest{
+			Limit:           zep.Int(limit),
+			MinOccurrences:  zep.Int(minOccurrences),
+			IncludeExamples: zep.Bool(includeExamples),
+		}
+
+		if userID != "" {
+			req.UserID = zep.String(userID)
+		} else {
+			req.GraphID = zep.String(graphID)
+		}
+
+		if recencyWeight != "" {
+			rw, err := zep.NewRecencyWeightFromString(recencyWeight)
+			if err != nil {
+				return fmt.Errorf("invalid recency-weight: %w", err)
+			}
+			req.RecencyWeight = rw.Ptr()
+		}
+
+		hasSeeds := nodeLabels != "" || edgeTypes != "" || nodeUUIDs != ""
+		if hasSeeds {
+			seeds := &zep.PatternSeeds{}
+			if nodeLabels != "" {
+				seeds.NodeLabels = strings.Split(nodeLabels, ",")
+			}
+			if edgeTypes != "" {
+				seeds.EdgeTypes = strings.Split(edgeTypes, ",")
+			}
+			if nodeUUIDs != "" {
+				seeds.NodeUUIDs = strings.Split(nodeUUIDs, ",")
+			}
+			req.Seeds = seeds
+		}
+
+		resp, err := c.Graph.DetectPatterns(context.Background(), req)
+		if err != nil {
+			return fmt.Errorf("detecting patterns: %w", err)
+		}
+
+		if output.GetFormat() == output.FormatTable {
+			tbl := output.NewTable("TYPE", "DESCRIPTION", "OCCURRENCES", "WEIGHTED SCORE")
+			tbl.WriteHeader()
+			for _, p := range resp.Patterns {
+				patternType := ""
+				if p.Type != nil {
+					patternType = *p.Type
+				}
+				desc := ""
+				if p.Description != nil {
+					desc = *p.Description
+					if len(desc) > 60 {
+						desc = desc[:60] + "..."
+					}
+				}
+				occurrences := 0
+				if p.Occurrences != nil {
+					occurrences = *p.Occurrences
+				}
+				weightedScore := 0.0
+				if p.WeightedScore != nil {
+					weightedScore = *p.WeightedScore
+				}
+				tbl.WriteRow(patternType, desc, fmt.Sprintf("%d", occurrences), fmt.Sprintf("%.2f", weightedScore))
 			}
 			return tbl.Flush()
 		}
@@ -765,10 +877,13 @@ func init() {
 	graphCmd.AddCommand(graphAddCmd)
 	graphCmd.AddCommand(graphAddFactCmd)
 	graphCmd.AddCommand(graphSearchCmd)
+	graphCmd.AddCommand(graphDetectPatternsCmd)
 
 	// List flags
 	graphListCmd.Flags().Int("page", 1, "Page number")
 	graphListCmd.Flags().Int("page-size", 50, "Results per page")
+	graphListCmd.Flags().String("order-by", "", "Sort by column (created_at, group_id, name)")
+	graphListCmd.Flags().Bool("asc", false, "Sort ascending")
 
 	// Delete flags
 	graphDeleteCmd.Flags().Bool("force", false, "Skip confirmation prompt")
@@ -801,6 +916,8 @@ func init() {
 	graphAddFactCmd.Flags().String("source-attrs", "", "Source node attributes as JSON")
 	graphAddFactCmd.Flags().String("edge-attrs", "", "Edge attributes as JSON")
 	graphAddFactCmd.Flags().String("target-attrs", "", "Target node attributes as JSON")
+	graphAddFactCmd.Flags().String("source-labels", "", "Comma-separated labels for the source node")
+	graphAddFactCmd.Flags().String("target-labels", "", "Comma-separated labels for the target node")
 
 	// Search flags
 	graphSearchCmd.Flags().String("user", "", "Search user graph")
@@ -809,14 +926,21 @@ func init() {
 	graphSearchCmd.Flags().Int("limit", 10, "Maximum results")
 	graphSearchCmd.Flags().String("reranker", "", "Reranker: rrf, mmr, cross_encoder")
 	graphSearchCmd.Flags().Float64("mmr-lambda", 0, "MMR diversity/relevance balance (0-1)")
-	graphSearchCmd.Flags().Float64("min-score", 0, "Deprecated: no longer has any effect")
-	_ = graphSearchCmd.Flags().MarkHidden("min-score")
-	graphSearchCmd.Flags().Float64("min-fact-rating", 0, "Deprecated: no longer has any effect")
-	_ = graphSearchCmd.Flags().MarkHidden("min-fact-rating")
 	graphSearchCmd.Flags().String("exclude-node-labels", "", "Comma-separated node labels to exclude")
 	graphSearchCmd.Flags().String("exclude-edge-types", "", "Comma-separated edge types to exclude")
 	graphSearchCmd.Flags().String("node-labels", "", "Comma-separated node labels to include")
 	graphSearchCmd.Flags().String("edge-types", "", "Comma-separated edge types to include")
 	graphSearchCmd.Flags().StringArray("property-filter", nil, "Property filter (can be repeated): property:op:value or property:IS NULL")
 	graphSearchCmd.Flags().StringArray("date-filter", nil, "Date filter (can be repeated): field:op:date or field:IS NULL")
+
+	// Detect-patterns flags
+	graphDetectPatternsCmd.Flags().String("user", "", "Detect patterns in user graph")
+	graphDetectPatternsCmd.Flags().String("graph", "", "Detect patterns in standalone graph")
+	graphDetectPatternsCmd.Flags().Int("limit", 50, "Maximum patterns to return (max 200)")
+	graphDetectPatternsCmd.Flags().Int("min-occurrences", 2, "Minimum occurrence count to report")
+	graphDetectPatternsCmd.Flags().String("recency-weight", "", "Recency decay: none, 7_days, 30_days, 90_days")
+	graphDetectPatternsCmd.Flags().Bool("include-examples", false, "Include example node/edge UUIDs per pattern")
+	graphDetectPatternsCmd.Flags().String("node-labels", "", "Comma-separated node labels for seed selection")
+	graphDetectPatternsCmd.Flags().String("edge-types", "", "Comma-separated edge types for seed selection")
+	graphDetectPatternsCmd.Flags().String("node-uuids", "", "Comma-separated node UUIDs for seed selection")
 }
