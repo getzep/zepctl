@@ -3,11 +3,13 @@ package cli
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/getzep/zep-go/v3"
+	zepgraph "github.com/getzep/zep-go/v3/graph"
 	"github.com/getzep/zepctl/internal/client"
 	"github.com/getzep/zepctl/internal/output"
 	"github.com/spf13/cobra"
@@ -126,6 +128,59 @@ var edgeGetCmd = &cobra.Command{
 	},
 }
 
+var edgeUpdateCmd = &cobra.Command{
+	Use:   "update <uuid>",
+	Short: "Update an edge",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		uuid := args[0]
+		fact, _ := cmd.Flags().GetString("fact")
+		name, _ := cmd.Flags().GetString("name")
+		validAt, _ := cmd.Flags().GetString("valid-at")
+		invalidAt, _ := cmd.Flags().GetString("invalid-at")
+		expiredAt, _ := cmd.Flags().GetString("expired-at")
+		attrsStr, _ := cmd.Flags().GetString("attrs")
+
+		c, err := client.New()
+		if err != nil {
+			return err
+		}
+
+		req := &zepgraph.UpdateEdgeRequest{}
+
+		if fact != "" {
+			req.Fact = zep.String(fact)
+		}
+		if name != "" {
+			req.Name = zep.String(name)
+		}
+		if validAt != "" {
+			req.ValidAt = zep.String(validAt)
+		}
+		if invalidAt != "" {
+			req.InvalidAt = zep.String(invalidAt)
+		}
+		if expiredAt != "" {
+			req.ExpiredAt = zep.String(expiredAt)
+		}
+		if attrsStr != "" {
+			var attrs map[string]any
+			if err := json.Unmarshal([]byte(attrsStr), &attrs); err != nil {
+				return fmt.Errorf("parsing attrs: %w", err)
+			}
+			req.Attributes = attrs
+		}
+
+		edge, err := c.Graph.Edge.Update(context.Background(), uuid, req)
+		if err != nil {
+			return fmt.Errorf("updating edge: %w", err)
+		}
+
+		output.Info("Updated edge %q", uuid)
+		return output.Print(edge)
+	},
+}
+
 var edgeDeleteCmd = &cobra.Command{
 	Use:   "delete <uuid>",
 	Short: "Delete an edge",
@@ -163,6 +218,7 @@ func init() {
 	rootCmd.AddCommand(edgeCmd)
 	edgeCmd.AddCommand(edgeListCmd)
 	edgeCmd.AddCommand(edgeGetCmd)
+	edgeCmd.AddCommand(edgeUpdateCmd)
 	edgeCmd.AddCommand(edgeDeleteCmd)
 
 	// List flags
@@ -170,6 +226,14 @@ func init() {
 	edgeListCmd.Flags().String("graph", "", "List edges for standalone graph")
 	edgeListCmd.Flags().Int("limit", 50, "Maximum number of results to return")
 	edgeListCmd.Flags().String("cursor", "", "UUID cursor for pagination (last UUID from previous page)")
+
+	// Update flags
+	edgeUpdateCmd.Flags().String("fact", "", "Updated fact")
+	edgeUpdateCmd.Flags().String("name", "", "Updated relationship type name")
+	edgeUpdateCmd.Flags().String("valid-at", "", "Updated time the fact becomes true (ISO 8601)")
+	edgeUpdateCmd.Flags().String("invalid-at", "", "Updated time the fact stops being true (ISO 8601)")
+	edgeUpdateCmd.Flags().String("expired-at", "", "Updated edge expiration time (ISO 8601)")
+	edgeUpdateCmd.Flags().String("attrs", "", "Attributes as JSON (merged with existing, set key to null to delete)")
 
 	// Delete flags
 	edgeDeleteCmd.Flags().Bool("force", false, "Skip confirmation prompt")

@@ -3,11 +3,13 @@ package cli
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/getzep/zep-go/v3"
+	zepgraph "github.com/getzep/zep-go/v3/graph"
 	"github.com/getzep/zepctl/internal/client"
 	"github.com/getzep/zepctl/internal/output"
 	"github.com/spf13/cobra"
@@ -191,6 +193,51 @@ var nodeEpisodesCmd = &cobra.Command{
 	},
 }
 
+var nodeUpdateCmd = &cobra.Command{
+	Use:   "update <uuid>",
+	Short: "Update a node",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		uuid := args[0]
+		name, _ := cmd.Flags().GetString("name")
+		summary, _ := cmd.Flags().GetString("summary")
+		labelsStr, _ := cmd.Flags().GetString("labels")
+		attrsStr, _ := cmd.Flags().GetString("attrs")
+
+		c, err := client.New()
+		if err != nil {
+			return err
+		}
+
+		req := &zepgraph.UpdateNodeRequest{}
+
+		if name != "" {
+			req.Name = zep.String(name)
+		}
+		if summary != "" {
+			req.Summary = zep.String(summary)
+		}
+		if labelsStr != "" {
+			req.Labels = strings.Split(labelsStr, ",")
+		}
+		if attrsStr != "" {
+			var attrs map[string]any
+			if err := json.Unmarshal([]byte(attrsStr), &attrs); err != nil {
+				return fmt.Errorf("parsing attrs: %w", err)
+			}
+			req.Attributes = attrs
+		}
+
+		node, err := c.Graph.Node.Update(context.Background(), uuid, req)
+		if err != nil {
+			return fmt.Errorf("updating node: %w", err)
+		}
+
+		output.Info("Updated node %q", uuid)
+		return output.Print(node)
+	},
+}
+
 var nodeDeleteCmd = &cobra.Command{
 	Use:   "delete <uuid>",
 	Short: "Delete a node",
@@ -228,6 +275,7 @@ func init() {
 	rootCmd.AddCommand(nodeCmd)
 	nodeCmd.AddCommand(nodeListCmd)
 	nodeCmd.AddCommand(nodeGetCmd)
+	nodeCmd.AddCommand(nodeUpdateCmd)
 	nodeCmd.AddCommand(nodeEdgesCmd)
 	nodeCmd.AddCommand(nodeEpisodesCmd)
 	nodeCmd.AddCommand(nodeDeleteCmd)
@@ -237,6 +285,12 @@ func init() {
 	nodeListCmd.Flags().String("graph", "", "List nodes for standalone graph")
 	nodeListCmd.Flags().Int("limit", 50, "Maximum number of results to return")
 	nodeListCmd.Flags().String("cursor", "", "UUID cursor for pagination (last UUID from previous page)")
+
+	// Update flags
+	nodeUpdateCmd.Flags().String("name", "", "Updated name")
+	nodeUpdateCmd.Flags().String("summary", "", "Updated summary")
+	nodeUpdateCmd.Flags().String("labels", "", "Comma-separated labels")
+	nodeUpdateCmd.Flags().String("attrs", "", "Attributes as JSON (merged with existing, set key to null to delete)")
 
 	// Delete flags
 	nodeDeleteCmd.Flags().Bool("force", false, "Skip confirmation prompt")
