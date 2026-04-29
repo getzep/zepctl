@@ -342,10 +342,12 @@ zepctl graph search <query> [flags]
 |------|-------------|
 | `--user` | Search user graph |
 | `--graph` | Search standalone graph |
-| `--scope` | Search scope: `edges`, `nodes`, `episodes` (default: `edges`) |
+| `--scope` | Search scope: `edges`, `nodes`, `episodes`, `observations`, `thread_summaries`, `auto` (default: `edges`) |
 | `--limit` | Maximum results (default: 10) |
 | `--reranker` | Reranker: `rrf`, `mmr`, `cross_encoder` |
 | `--mmr-lambda` | MMR diversity/relevance balance (0-1) |
+| `--max-characters` | Max total characters across selected results (`scope=auto`, max 50000) |
+| `--return-raw-results` | When `scope=auto`, include raw graph results alongside the materialized context block |
 | `--exclude-node-labels` | Comma-separated node labels to exclude |
 | `--exclude-edge-types` | Comma-separated edge types to exclude |
 
@@ -474,6 +476,50 @@ zepctl episode delete <uuid> [flags]
 | Flag | Description |
 |------|-------------|
 | `--force` | Skip confirmation prompt |
+
+---
+
+### Observation Commands
+
+Read-only access to derived observation nodes for a user or graph.
+
+#### List Observations
+
+```bash
+zepctl observation list [flags]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--user` | List observations for user graph |
+| `--graph` | List observations for standalone graph |
+| `--limit` | Maximum results (default: 50) |
+| `--cursor` | UUID cursor for pagination (last UUID from previous page) |
+
+#### Get Observation
+
+```bash
+zepctl observation get <uuid>
+```
+
+---
+
+### Thread Summary Commands
+
+List incremental thread summaries derived from messages in a user's or graph's threads.
+
+#### List Thread Summaries
+
+```bash
+zepctl thread-summary list [flags]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--user` | List thread summaries for user graph |
+| `--graph` | List thread summaries for standalone graph |
+| `--limit` | Maximum results (default: 50) |
+| `--cursor` | UUID cursor for pagination (last UUID from previous page) |
 
 ---
 

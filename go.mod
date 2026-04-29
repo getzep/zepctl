@@ -3,7 +3,7 @@ module github.com/getzep/zepctl
 go 1.25.5
 
 require (
-	github.com/getzep/zep-go/v3 v3.17.0
+	github.com/getzep/zep-go/v3 v3.21.0
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/viper v1.19.0
 	github.com/zalando/go-keyring v0.2.6

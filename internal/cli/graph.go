@@ -444,7 +444,8 @@ Example: --source-attrs '{"type": "Person", "age": 30}'`,
 var graphSearchCmd = &cobra.Command{
 	Use:   "search <query>",
 	Short: "Search a graph",
-	Long: `Search a user graph or standalone graph for edges, nodes, or episodes.
+	Long: `Search a user graph or standalone graph for edges, nodes, episodes, observations,
+thread_summaries, or auto.
 
 Property filters allow filtering by node/edge attributes:
   --property-filter "property_name:operator:value"
@@ -474,6 +475,8 @@ Date filters allow filtering by date fields (created_at, valid_at, invalid_at, e
 		limit, _ := cmd.Flags().GetInt("limit")
 		reranker, _ := cmd.Flags().GetString("reranker")
 		mmrLambda, _ := cmd.Flags().GetFloat64("mmr-lambda")
+		maxCharacters, _ := cmd.Flags().GetInt("max-characters")
+		returnRawResults, _ := cmd.Flags().GetBool("return-raw-results")
 		excludeNodeLabels, _ := cmd.Flags().GetString("exclude-node-labels")
 		excludeEdgeTypes, _ := cmd.Flags().GetString("exclude-edge-types")
 		nodeLabels, _ := cmd.Flags().GetString("node-labels")
@@ -513,6 +516,14 @@ Date filters allow filtering by date fields (created_at, valid_at, invalid_at, e
 
 		if cmd.Flags().Changed("mmr-lambda") {
 			req.MmrLambda = zep.Float64(mmrLambda)
+		}
+
+		if cmd.Flags().Changed("max-characters") {
+			req.MaxCharacters = zep.Int(maxCharacters)
+		}
+
+		if cmd.Flags().Changed("return-raw-results") {
+			req.ReturnRawResults = zep.Bool(returnRawResults)
 		}
 
 		// Build search filters
@@ -560,38 +571,71 @@ Date filters allow filtering by date fields (created_at, valid_at, invalid_at, e
 			return fmt.Errorf("searching graph: %w", err)
 		}
 
-		if output.GetFormat() == output.FormatTable && scope == "edges" {
-			tbl := output.NewTable("UUID", "FACT", "VALID AT", "INVALID AT")
-			tbl.WriteHeader()
-			for _, e := range resp.Edges {
-				fact := e.Fact
-				if len(fact) > 60 {
-					fact = fact[:60] + "..."
+		if output.GetFormat() == output.FormatTable {
+			switch scope {
+			case "edges":
+				tbl := output.NewTable("UUID", "FACT", "VALID AT", "INVALID AT")
+				tbl.WriteHeader()
+				for _, e := range resp.Edges {
+					fact := e.Fact
+					if len(fact) > 60 {
+						fact = fact[:60] + "..."
+					}
+					validAt := ""
+					if e.ValidAt != nil {
+						validAt = *e.ValidAt
+					}
+					invalidAt := ""
+					if e.InvalidAt != nil {
+						invalidAt = *e.InvalidAt
+					}
+					tbl.WriteRow(e.UUID, fact, validAt, invalidAt)
 				}
-				validAt := ""
-				if e.ValidAt != nil {
-					validAt = *e.ValidAt
+				return tbl.Flush()
+			case "nodes":
+				tbl := output.NewTable("UUID", "NAME", "SUMMARY")
+				tbl.WriteHeader()
+				for _, n := range resp.Nodes {
+					summary := n.Summary
+					if len(summary) > 50 {
+						summary = summary[:50] + "..."
+					}
+					tbl.WriteRow(n.UUID, n.Name, summary)
 				}
-				invalidAt := ""
-				if e.InvalidAt != nil {
-					invalidAt = *e.InvalidAt
+				return tbl.Flush()
+			case "observations":
+				tbl := output.NewTable("UUID", "NAME", "SUMMARY")
+				tbl.WriteHeader()
+				for _, o := range resp.Observations {
+					summary := ""
+					if o.Summary != nil {
+						summary = *o.Summary
+						if len(summary) > 50 {
+							summary = summary[:50] + "..."
+						}
+					}
+					tbl.WriteRow(o.UUID, o.Name, summary)
 				}
-				tbl.WriteRow(e.UUID, fact, validAt, invalidAt)
+				return tbl.Flush()
+			case "thread_summaries":
+				tbl := output.NewTable("UUID", "NAME", "SUMMARY", "LAST SUMMARIZED AT")
+				tbl.WriteHeader()
+				for _, s := range resp.ThreadSummaries {
+					summary := ""
+					if s.Summary != nil {
+						summary = *s.Summary
+						if len(summary) > 50 {
+							summary = summary[:50] + "..."
+						}
+					}
+					lastSummarizedAt := ""
+					if s.LastSummarizedAt != nil {
+						lastSummarizedAt = *s.LastSummarizedAt
+					}
+					tbl.WriteRow(s.UUID, s.Name, summary, lastSummarizedAt)
+				}
+				return tbl.Flush()
 			}
-			return tbl.Flush()
-		}
-
-		if output.GetFormat() == output.FormatTable && scope == "nodes" {
-			tbl := output.NewTable("UUID", "NAME", "SUMMARY")
-			tbl.WriteHeader()
-			for _, n := range resp.Nodes {
-				summary := n.Summary
-				if len(summary) > 50 {
-					summary = summary[:50] + "..."
-				}
-				tbl.WriteRow(n.UUID, n.Name, summary)
-			}
-			return tbl.Flush()
 		}
 
 		return output.Print(resp)
@@ -602,20 +646,31 @@ var graphDetectPatternsCmd = &cobra.Command{
 	Use:   "detect-patterns",
 	Short: "Detect structural patterns in a graph",
 	Long: `Detects structural patterns in a knowledge graph including relationship frequencies,
-multi-hop paths, co-occurrences, hubs, and clusters.`,
+multi-hop paths, co-occurrences, hubs, and clusters.
+
+Pass --query to discover seed nodes via hybrid search; this forces triple-frequency
+detection and returns resolved edges with cross-encoder reranking. --query is
+mutually exclusive with seed selection flags (--node-labels/--edge-types/--node-uuids).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		userID, _ := cmd.Flags().GetString("user")
 		graphID, _ := cmd.Flags().GetString("graph")
 		limit, _ := cmd.Flags().GetInt("limit")
 		minOccurrences, _ := cmd.Flags().GetInt("min-occurrences")
 		recencyWeight, _ := cmd.Flags().GetString("recency-weight")
-		includeExamples, _ := cmd.Flags().GetBool("include-examples")
 		nodeLabels, _ := cmd.Flags().GetString("node-labels")
 		edgeTypes, _ := cmd.Flags().GetString("edge-types")
 		nodeUUIDs, _ := cmd.Flags().GetString("node-uuids")
+		query, _ := cmd.Flags().GetString("query")
+		queryLimit, _ := cmd.Flags().GetInt("query-limit")
+		edgeLimit, _ := cmd.Flags().GetInt("edge-limit")
 
 		if userID == "" && graphID == "" {
 			return fmt.Errorf("either --user or --graph is required")
+		}
+
+		hasSeeds := nodeLabels != "" || edgeTypes != "" || nodeUUIDs != ""
+		if query != "" && hasSeeds {
+			return fmt.Errorf("--query is mutually exclusive with --node-labels/--edge-types/--node-uuids")
 		}
 
 		c, err := client.New()
@@ -624,9 +679,8 @@ multi-hop paths, co-occurrences, hubs, and clusters.`,
 		}
 
 		req := &zep.DetectPatternsRequest{
-			Limit:           zep.Int(limit),
-			MinOccurrences:  zep.Int(minOccurrences),
-			IncludeExamples: zep.Bool(includeExamples),
+			Limit:          zep.Int(limit),
+			MinOccurrences: zep.Int(minOccurrences),
 		}
 
 		if userID != "" {
@@ -643,7 +697,16 @@ multi-hop paths, co-occurrences, hubs, and clusters.`,
 			req.RecencyWeight = rw.Ptr()
 		}
 
-		hasSeeds := nodeLabels != "" || edgeTypes != "" || nodeUUIDs != ""
+		if query != "" {
+			req.Query = zep.String(query)
+			if cmd.Flags().Changed("query-limit") {
+				req.QueryLimit = zep.Int(queryLimit)
+			}
+			if cmd.Flags().Changed("edge-limit") {
+				req.EdgeLimit = zep.Int(edgeLimit)
+			}
+		}
+
 		if hasSeeds {
 			seeds := &zep.PatternSeeds{}
 			if nodeLabels != "" {
@@ -672,11 +735,13 @@ multi-hop paths, co-occurrences, hubs, and clusters.`,
 					patternType = *p.Type
 				}
 				desc := ""
-				if p.Description != nil {
+				if p.Summary != nil {
+					desc = *p.Summary
+				} else if p.Description != nil {
 					desc = *p.Description
-					if len(desc) > 60 {
-						desc = desc[:60] + "..."
-					}
+				}
+				if len(desc) > 60 {
+					desc = desc[:60] + "..."
 				}
 				occurrences := 0
 				if p.Occurrences != nil {
@@ -922,10 +987,12 @@ func init() {
 	// Search flags
 	graphSearchCmd.Flags().String("user", "", "Search user graph")
 	graphSearchCmd.Flags().String("graph", "", "Search standalone graph")
-	graphSearchCmd.Flags().String("scope", "edges", "Search scope: edges, nodes, episodes")
+	graphSearchCmd.Flags().String("scope", "edges", "Search scope: edges, nodes, episodes, observations, thread_summaries, auto")
 	graphSearchCmd.Flags().Int("limit", 10, "Maximum results")
 	graphSearchCmd.Flags().String("reranker", "", "Reranker: rrf, mmr, cross_encoder")
 	graphSearchCmd.Flags().Float64("mmr-lambda", 0, "MMR diversity/relevance balance (0-1)")
+	graphSearchCmd.Flags().Int("max-characters", 0, "Max total characters across selected results (scope=auto, max 50000)")
+	graphSearchCmd.Flags().Bool("return-raw-results", false, "When scope=auto, include raw graph results alongside the materialized context block")
 	graphSearchCmd.Flags().String("exclude-node-labels", "", "Comma-separated node labels to exclude")
 	graphSearchCmd.Flags().String("exclude-edge-types", "", "Comma-separated edge types to exclude")
 	graphSearchCmd.Flags().String("node-labels", "", "Comma-separated node labels to include")
@@ -939,8 +1006,10 @@ func init() {
 	graphDetectPatternsCmd.Flags().Int("limit", 50, "Maximum patterns to return (max 200)")
 	graphDetectPatternsCmd.Flags().Int("min-occurrences", 2, "Minimum occurrence count to report")
 	graphDetectPatternsCmd.Flags().String("recency-weight", "", "Recency decay: none, 7_days, 30_days, 90_days")
-	graphDetectPatternsCmd.Flags().Bool("include-examples", false, "Include example node/edge UUIDs per pattern")
 	graphDetectPatternsCmd.Flags().String("node-labels", "", "Comma-separated node labels for seed selection")
 	graphDetectPatternsCmd.Flags().String("edge-types", "", "Comma-separated edge types for seed selection")
 	graphDetectPatternsCmd.Flags().String("node-uuids", "", "Comma-separated node UUIDs for seed selection")
+	graphDetectPatternsCmd.Flags().String("query", "", "Search query for seed-node discovery; forces triple-frequency detection with edge resolution")
+	graphDetectPatternsCmd.Flags().Int("query-limit", 10, "Max seed nodes from query (max 50, only with --query)")
+	graphDetectPatternsCmd.Flags().Int("edge-limit", 10, "Max resolved edges per pattern (max 100, only with --query)")
 }

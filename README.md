@@ -57,6 +57,8 @@ Configuration file location: `~/.zepctl/config.yaml`
 | `node` | Manage graph nodes |
 | `edge` | Manage graph edges |
 | `episode` | Manage graph episodes |
+| `observation` | List/get derived observation nodes |
+| `thread-summary` | List incremental thread summaries |
 | `task` | Monitor async operations |
 | `ontology` | Manage graph schema |
 | `summary-instructions` | Manage user summary instructions |
