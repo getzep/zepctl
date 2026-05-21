@@ -86,7 +86,8 @@ func NewWithCredential(ctx context.Context, credType CredentialType) (*Client, e
 		if projectUUID := config.GetProjectUUID(); projectUUID != "" {
 			headers.Set(projectHeader, projectUUID)
 		}
-		opts = append(opts,
+		opts = append(
+			opts,
 			option.WithHTTPClient(httpClient),
 			option.WithHTTPHeader(headers),
 		)
