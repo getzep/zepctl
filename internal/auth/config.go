@@ -19,8 +19,7 @@ var (
 //
 // The client ID is NOT a secret. It is a public OAuth 2.0 client identifier
 // for a "Front-end" application, which has no client secret. It is safe to
-// commit to source control and compile into the binary. See spec Sections
-// 2.2 and 7.5.
+// commit to source control and compile into the binary.
 //
 // Audience is intentionally empty in the build-time defaults. Profiles that
 // target a backend which enforces the aud claim must provide one explicitly
