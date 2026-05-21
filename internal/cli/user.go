@@ -21,10 +21,10 @@ var userCmd = &cobra.Command{
 }
 
 var userListCmd = &cobra.Command{
-	Use:   "list",
+	Use:   listCmdUse,
 	Short: "List users",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -94,7 +94,7 @@ var userGetCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		userID := args[0]
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -141,7 +141,7 @@ var userCreateCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		userID := args[0]
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -199,7 +199,7 @@ var userUpdateCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		userID := args[0]
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -268,7 +268,7 @@ var userDeleteCmd = &cobra.Command{
 			}
 		}
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -289,7 +289,7 @@ var userThreadsCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		userID := args[0]
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -327,7 +327,7 @@ var userNodeCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		userID := args[0]
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}

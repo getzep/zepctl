@@ -17,7 +17,7 @@ var threadSummaryCmd = &cobra.Command{
 }
 
 var threadSummaryListCmd = &cobra.Command{
-	Use:   "list",
+	Use:   listCmdUse,
 	Short: "List thread summaries",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		userID, _ := cmd.Flags().GetString("user")
@@ -29,7 +29,7 @@ var threadSummaryListCmd = &cobra.Command{
 			return fmt.Errorf("either --user or --graph is required")
 		}
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}

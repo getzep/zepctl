@@ -24,12 +24,12 @@ var summaryInstructionsCmd = &cobra.Command{
 }
 
 var summaryInstructionsListCmd = &cobra.Command{
-	Use:   "list",
+	Use:   listCmdUse,
 	Short: "List summary instructions",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		userID, _ := cmd.Flags().GetString("user")
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -92,7 +92,7 @@ var summaryInstructionsAddCmd = &cobra.Command{
 			return fmt.Errorf("instruction text exceeds maximum length of %d characters (got %d)", maxInstructionLength, len(instructionText))
 		}
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -148,7 +148,7 @@ var summaryInstructionsDeleteCmd = &cobra.Command{
 			}
 		}
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}

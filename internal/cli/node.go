@@ -22,7 +22,7 @@ var nodeCmd = &cobra.Command{
 }
 
 var nodeListCmd = &cobra.Command{
-	Use:   "list",
+	Use:   listCmdUse,
 	Short: "List nodes",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		userID, _ := cmd.Flags().GetString("user")
@@ -32,7 +32,7 @@ var nodeListCmd = &cobra.Command{
 			return fmt.Errorf("either --user or --graph is required")
 		}
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -92,7 +92,7 @@ var nodeGetCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		uuid := args[0]
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -127,7 +127,7 @@ var nodeEdgesCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		uuid := args[0]
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -162,7 +162,7 @@ var nodeEpisodesCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		uuid := args[0]
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -204,7 +204,7 @@ var nodeUpdateCmd = &cobra.Command{
 		labelsStr, _ := cmd.Flags().GetString("labels")
 		attrsStr, _ := cmd.Flags().GetString("attrs")
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -257,7 +257,7 @@ var nodeDeleteCmd = &cobra.Command{
 			}
 		}
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}

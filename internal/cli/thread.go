@@ -22,10 +22,10 @@ var threadCmd = &cobra.Command{
 }
 
 var threadListCmd = &cobra.Command{
-	Use:   "list",
+	Use:   listCmdUse,
 	Short: "List all threads",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -88,7 +88,7 @@ var threadCreateCmd = &cobra.Command{
 			return fmt.Errorf("--user flag is required")
 		}
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -116,7 +116,7 @@ var threadGetCmd = &cobra.Command{
 		threadID := args[0]
 		lastN, _ := cmd.Flags().GetInt("last")
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -175,7 +175,7 @@ var threadDeleteCmd = &cobra.Command{
 			}
 		}
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -198,7 +198,7 @@ var threadMessagesCmd = &cobra.Command{
 		lastN, _ := cmd.Flags().GetInt("last")
 		limit, _ := cmd.Flags().GetInt("limit")
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -287,7 +287,7 @@ var threadAddMessagesCmd = &cobra.Command{
 			return fmt.Errorf("parsing messages: %w", err)
 		}
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -348,7 +348,7 @@ var threadContextCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		threadID := args[0]
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}

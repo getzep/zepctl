@@ -22,10 +22,10 @@ var graphCmd = &cobra.Command{
 }
 
 var graphListCmd = &cobra.Command{
-	Use:   "list",
+	Use:   listCmdUse,
 	Short: "List graphs",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -87,7 +87,7 @@ var graphCreateCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		graphID := args[0]
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -124,7 +124,7 @@ var graphDeleteCmd = &cobra.Command{
 			}
 		}
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -164,7 +164,7 @@ var graphCloneCmd = &cobra.Command{
 			return fmt.Errorf("--target-user cannot be used with --source-graph; use --target-graph instead")
 		}
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -232,7 +232,7 @@ var graphAddCmd = &cobra.Command{
 			return fmt.Errorf("either graph-id argument or --user flag is required")
 		}
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -371,7 +371,7 @@ Example: --source-attrs '{"type": "Person", "age": 30}'`,
 			return fmt.Errorf("--target-node is required")
 		}
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -398,10 +398,18 @@ Example: --source-attrs '{"type": "Person", "age": 30}'`,
 		}
 
 		if sourceLabelsStr != "" {
-			req.SourceNodeLabels = strings.Split(sourceLabelsStr, ",")
+			labels := strings.Split(sourceLabelsStr, ",")
+			if len(labels) > 1 {
+				return fmt.Errorf("--source-label accepts a single value; got %d", len(labels))
+			}
+			req.SourceNodeLabels = labels
 		}
 		if targetLabelsStr != "" {
-			req.TargetNodeLabels = strings.Split(targetLabelsStr, ",")
+			labels := strings.Split(targetLabelsStr, ",")
+			if len(labels) > 1 {
+				return fmt.Errorf("--target-label accepts a single value; got %d", len(labels))
+			}
+			req.TargetNodeLabels = labels
 		}
 
 		// Parse source node attributes
@@ -488,7 +496,7 @@ Date filters allow filtering by date fields (created_at, valid_at, invalid_at, e
 			return fmt.Errorf("either --user or --graph is required")
 		}
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -673,7 +681,7 @@ mutually exclusive with seed selection flags (--node-labels/--edge-types/--node-
 			return fmt.Errorf("--query is mutually exclusive with --node-labels/--edge-types/--node-uuids")
 		}
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -981,8 +989,8 @@ func init() {
 	graphAddFactCmd.Flags().String("source-attrs", "", "Source node attributes as JSON")
 	graphAddFactCmd.Flags().String("edge-attrs", "", "Edge attributes as JSON")
 	graphAddFactCmd.Flags().String("target-attrs", "", "Target node attributes as JSON")
-	graphAddFactCmd.Flags().String("source-labels", "", "Comma-separated labels for the source node")
-	graphAddFactCmd.Flags().String("target-labels", "", "Comma-separated labels for the target node")
+	graphAddFactCmd.Flags().String("source-labels", "", "Label for the source node (single value; API accepts at most one)")
+	graphAddFactCmd.Flags().String("target-labels", "", "Label for the target node (single value; API accepts at most one)")
 
 	// Search flags
 	graphSearchCmd.Flags().String("user", "", "Search user graph")

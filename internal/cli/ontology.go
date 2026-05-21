@@ -24,7 +24,7 @@ var ontologyGetCmd = &cobra.Command{
 	Use:   "get",
 	Short: "Get ontology definitions",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -66,7 +66,7 @@ var ontologySetCmd = &cobra.Command{
 			}
 		}
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}

@@ -21,7 +21,7 @@ var episodeCmd = &cobra.Command{
 }
 
 var episodeListCmd = &cobra.Command{
-	Use:   "list",
+	Use:   listCmdUse,
 	Short: "List episodes",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		userID, _ := cmd.Flags().GetString("user")
@@ -32,7 +32,7 @@ var episodeListCmd = &cobra.Command{
 			return fmt.Errorf("either --user or --graph is required")
 		}
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -95,7 +95,7 @@ var episodeGetCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		uuid := args[0]
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -138,7 +138,7 @@ var episodeMentionsCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		uuid := args[0]
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -171,7 +171,7 @@ var episodeDeleteCmd = &cobra.Command{
 			}
 		}
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
