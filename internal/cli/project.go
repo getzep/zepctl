@@ -19,7 +19,7 @@ var projectGetCmd = &cobra.Command{
 	Use:   "get",
 	Short: "Get project information",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}

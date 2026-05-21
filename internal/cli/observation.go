@@ -18,7 +18,7 @@ var observationCmd = &cobra.Command{
 }
 
 var observationListCmd = &cobra.Command{
-	Use:   "list",
+	Use:   listCmdUse,
 	Short: "List observations",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		userID, _ := cmd.Flags().GetString("user")
@@ -30,7 +30,7 @@ var observationListCmd = &cobra.Command{
 			return fmt.Errorf("either --user or --graph is required")
 		}
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -86,7 +86,7 @@ var observationGetCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		uuid := args[0]
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}

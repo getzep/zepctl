@@ -40,6 +40,13 @@ zepctl user list
 
 ## Authentication
 
+zepctl supports two authentication modes that coexist on the same profile:
+
+- **API key** (long-lived): pass via `ZEP_API_KEY` or store per-profile in the system keychain. Used for headless / CI scenarios.
+- **Bearer token** (OAuth / Kinde): obtained interactively via `zepctl auth login` and stored as a refresh token in the system keychain. Required for the ABAC management commands (`policy-set`, `api-key`) and the `config set-project` interactive flow.
+
+Commands that require bearer auth use the bearer token even if an API key is also present.
+
 ### Environment Variables
 
 | Variable | Description |
@@ -48,6 +55,7 @@ zepctl user list
 | `ZEP_API_URL` | API endpoint URL (default: `https://api.getzep.com`) |
 | `ZEP_PROFILE` | Override current profile |
 | `ZEP_OUTPUT` | Default output format |
+| `ZEP_PROJECT` | Override active project UUID |
 
 ### Configuration File
 
@@ -59,15 +67,47 @@ profiles:
   - name: production
     # API keys are stored securely in the system keychain
   - name: development
-    api-url: https://api.dev.getzep.com  # Optional: only if using non-default URL
+    api-url: https://api.example.com
+    # Optional per-profile OAuth overrides; otherwise build-time defaults apply.
+    oauth-issuer: https://your-tenant.kinde.com
+    oauth-client-id: <client-id>
+    oauth-audience: <audience>
+    project-uuid: <project-uuid>
+    account-uuid: <account-uuid>
+environments:
+  # Named presets that can be applied to profiles via `--env`.
+  - name: dev
+    api-url: https://api.example.com
+    oauth-issuer: https://your-tenant.kinde.com
+    oauth-client-id: <client-id>
+    oauth-audience: <audience>
 defaults:
   output: table
   page-size: 50
 ```
 
 <Note>
-API keys are stored in the system keychain (macOS Keychain, Windows Credential Manager, or Linux Secret Service) rather than in the config file. For CI/CD environments without keychain access, use the `ZEP_API_KEY` environment variable.
+API keys and OAuth refresh tokens are stored in the system keychain (macOS Keychain, Windows Credential Manager, or Linux Secret Service) rather than in the config file. For CI/CD environments without keychain access, use the `ZEP_API_KEY` environment variable.
 </Note>
+
+### Interactive Login
+
+```bash
+# Open a browser to authenticate, then auto-select a project
+zepctl auth login
+
+# Bootstrap an isolated dev profile against a configured environment preset
+zepctl --profile dev auth login --env dev
+
+# Print the authorization URL instead of opening a browser (headless / SSH)
+zepctl auth login --no-browser
+
+# Check current credentials and bearer token expiration
+zepctl auth status
+
+# Revoke refresh token and clear bearer token for the current profile
+zepctl auth logout
+```
 
 ## Global Flags
 
@@ -76,33 +116,88 @@ API keys are stored in the system keychain (macOS Keychain, Windows Credential M
 | `--api-key` | `-k` | Override API key |
 | `--api-url` | | Override API URL |
 | `--profile` | `-p` | Use specific profile |
+| `--project` | | Override active project UUID for this command |
 | `--output` | `-o` | Output format: `table`, `json`, `yaml`, `wide` |
 | `--quiet` | `-q` | Suppress non-essential output |
 | `--verbose` | `-v` | Enable verbose output |
+| `--config` | | Path to config file (default: `$HOME/.zepctl/config.yaml`) |
 | `--help` | `-h` | Display help |
 
 ## Commands
 
 ### config
 
-Manage zepctl configuration including profiles and defaults.
+Manage zepctl configuration including profiles, environment presets, and the active project.
 
 ```bash
-# View current configuration
+# Profiles
 zepctl config view
-
-# List all profiles
 zepctl config get-profiles
-
-# Switch active profile
 zepctl config use-profile <name>
-
-# Add a new profile (prompts for API key)
-zepctl config add-profile <name> [--api-url URL]
-
-# Remove a profile
+zepctl config add-profile <name> [--api-url URL] [--env <name>] [--no-api-key]
+zepctl config update-profile [name] [flags]
 zepctl config delete-profile <name> [--force]
+
+# Active project for the current profile
+zepctl config set-project [uuid]     # interactive if uuid omitted
+
+# Environment presets (reusable api-url + OAuth settings)
+zepctl config get-environments
+zepctl config add-environment <name> [flags]
+zepctl config update-environment <name> [flags]
+zepctl config delete-environment <name> [--force]
 ```
+
+#### Profile Flags
+
+`add-profile` and `update-profile` accept the same field flags. On `update`, only flags explicitly passed are applied; pass an empty string to clear a field.
+
+| Flag | Description |
+|------|-------------|
+| `--api-key` | API key (stored in system keychain) |
+| `--api-url` | API endpoint URL |
+| `--env` | Apply a named environment preset (replaces `api-url`/OAuth fields). Per-field flags override the preset. |
+| `--oauth-issuer` | OIDC issuer override for `auth login` |
+| `--oauth-client-id` | OAuth client ID override for `auth login` |
+| `--oauth-audience` | OAuth audience for the bearer token `aud` claim |
+| `--project` | Project UUID (update only) |
+| `--account` | Account UUID (update only) |
+| `--no-api-key` | (`add-profile` only) Create a bearer-only profile with no API key, skipping the prompt |
+
+#### Environment Preset Flags
+
+| Flag | Description |
+|------|-------------|
+| `--api-url` | API URL for the environment |
+| `--oauth-issuer` | OIDC issuer |
+| `--oauth-client-id` | OAuth client ID |
+| `--oauth-audience` | OAuth audience for bearer token `aud` claim |
+| `--force` | (`delete-environment` only) Skip confirmation prompt |
+
+### auth
+
+Manage bearer-token authentication for the current profile.
+
+```bash
+# Open a browser to authenticate, store refresh + access tokens, auto-select a project
+zepctl auth login
+
+# Headless: print the authorization URL instead of opening a browser
+zepctl auth login --no-browser
+
+# Create a new profile against a named environment preset on first login
+zepctl --profile dev auth login --env dev
+
+# Revoke refresh token and clear bearer token from the keychain
+zepctl auth logout
+
+# Show profile, API URL, OIDC issuer, masked API key, and bearer expiration
+zepctl auth status
+```
+
+<Note>
+`auth login` auto-selects a project after authentication: if the account has exactly one project, it is selected automatically; otherwise the CLI prompts for a choice. ABAC management commands (`policy-set`, `api-key`) require a valid bearer token.
+</Note>
 
 ### project
 
@@ -502,6 +597,75 @@ zepctl summary-instructions add --name NAME --file instructions.txt [--user USER
 
 # Delete instructions
 zepctl summary-instructions delete <name> [--force] [--user USER_IDS]
+```
+
+### policy-set
+
+Manage ABAC policy sets -- reusable bundles of access rules attached to API keys. Requires a bearer token (`auth login`) and operates on the currently-selected project (including `validate`, which calls the server).
+
+```bash
+# List policy sets in the active project
+zepctl policy-set list
+
+# Get a single policy set (table output renders the spec as indented YAML)
+zepctl policy-set get <uuid>
+
+# Create / update from a YAML file
+zepctl policy-set create --file path/to/spec.yaml
+zepctl policy-set update <uuid> --file path/to/spec.yaml
+
+# Validate a YAML spec without persisting it
+zepctl policy-set validate --file path/to/spec.yaml
+
+# Delete (prompts unless --force; --force is required in non-interactive contexts)
+zepctl policy-set delete <uuid> [--force]
+```
+
+<Note>
+`validate` exits 0 on success, 1 if validation fails (errors printed to stderr), and 2 on client or transport errors.
+</Note>
+
+### api-key
+
+Configure ABAC enforcement on individual API keys and dry-run policy decisions. All `api-key` commands require a bearer token.
+
+```bash
+# List API keys (UUID, name, masked key, role)
+zepctl api-key list
+
+# Per-key ABAC settings
+zepctl api-key settings get <key-uuid>
+zepctl api-key settings set <key-uuid> --mode <off|report_only|enforce>
+
+# Policy set attachments
+zepctl api-key policy-sets list <key-uuid>
+zepctl api-key policy-sets attach <key-uuid> <policy-set-uuid>
+zepctl api-key policy-sets detach <key-uuid> <policy-set-uuid>
+
+# Dry-run a policy decision against the key's live configuration
+zepctl api-key evaluate <key-uuid> --action <name>
+zepctl api-key explain  <key-uuid> --action <name>
+```
+
+#### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--mode` | (`settings set`) ABAC enforcement mode: `off`, `report_only`, `enforce` |
+| `--action` | (`evaluate`, `explain`) Required. Action name to evaluate (e.g. `thread.get`) |
+
+`evaluate` returns the final outcome (`allow` / `deny`), the ABAC and ABAC-shadow decisions, whether the role would have allowed the action, and whether the disagreement would be logged. `explain` returns everything `evaluate` does plus the registry entry's read-only flag and the full evaluator trace (matched policies per set, set modes, and skipped sets).
+
+<Note>
+Both `evaluate` and `explain` always exit 0 on a successful API call regardless of allow/deny outcome -- inspect the JSON or table output to check the decision.
+</Note>
+
+**Example**:
+```bash
+# Switch a key to report-only mode, attach a policy set, then check the decision
+zepctl api-key settings set abcd1234-... --mode report_only
+zepctl api-key policy-sets attach abcd1234-... efgh5678-...
+zepctl api-key evaluate abcd1234-... --action thread.get -o json
 ```
 
 ## Examples

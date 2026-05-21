@@ -23,7 +23,7 @@ var taskGetCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		taskID := args[0]
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -74,7 +74,7 @@ var taskWaitCmd = &cobra.Command{
 		timeout, _ := cmd.Flags().GetDuration("timeout")
 		pollInterval, _ := cmd.Flags().GetDuration("poll-interval")
 
-		c, err := client.New()
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}

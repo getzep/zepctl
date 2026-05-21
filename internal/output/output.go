@@ -1,6 +1,7 @@
 package output
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -54,6 +55,32 @@ func Fprint(w io.Writer, data any) error {
 		return printJSON(w, data)
 	}
 	return printJSON(w, data)
+}
+
+// FprintRaw outputs a raw JSON document in the configured format,
+// preserving server-added fields the CLI doesn't model. JSON output
+// pretty-prints the bytes through json.Indent (preserving server key
+// order). YAML output parses into a generic value and emits as YAML
+// (key order is not preserved through this path).
+func FprintRaw(w io.Writer, rawJSON []byte) error {
+	switch GetFormat() {
+	case FormatYAML:
+		var v any
+		if err := json.Unmarshal(rawJSON, &v); err != nil {
+			return fmt.Errorf("decoding response: %w", err)
+		}
+		encoder := yaml.NewEncoder(w)
+		encoder.SetIndent(2)
+		return encoder.Encode(v)
+	default:
+		var buf bytes.Buffer
+		if err := json.Indent(&buf, rawJSON, "", "  "); err != nil {
+			return fmt.Errorf("indenting response: %w", err)
+		}
+		buf.WriteByte('\n')
+		_, err := w.Write(buf.Bytes())
+		return err
+	}
 }
 
 func printJSON(w io.Writer, data any) error {
