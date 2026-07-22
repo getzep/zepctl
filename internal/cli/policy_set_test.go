@@ -377,7 +377,7 @@ func withTestABACClient(t *testing.T, srv *httptest.Server) {
 	t.Helper()
 	orig := newABACClient
 	newABACClient = func(_ *cobra.Command) (*abac.Client, error) {
-		return abac.NewClient(srv.Client(), srv.URL, "test-project"), nil
+		return abac.NewClient(srv.Client(), srv.URL, "test-project", "test-account"), nil
 	}
 	t.Cleanup(func() { newABACClient = orig })
 }

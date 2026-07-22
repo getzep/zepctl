@@ -10,8 +10,8 @@ func TestOAuthConfigFor_FallsBackToDefaults(t *testing.T) {
 	if cfg.ClientID != defaultClientID {
 		t.Errorf("ClientID = %q, want default %q", cfg.ClientID, defaultClientID)
 	}
-	if cfg.Audience != "" {
-		t.Errorf("Audience = %q, want empty default", cfg.Audience)
+	if cfg.Audience != defaultAudience {
+		t.Errorf("Audience = %q, want default %q", cfg.Audience, defaultAudience)
 	}
 }
 

@@ -14,7 +14,7 @@ import (
 
 // newTestClient creates a Client pointing at the given test server.
 func newTestClient(srv *httptest.Server) *Client {
-	return NewClient(srv.Client(), srv.URL, "test-project-uuid")
+	return NewClient(srv.Client(), srv.URL, "test-project-uuid", "test-account-uuid")
 }
 
 // --- Policy Set CRUD ---
@@ -40,6 +40,29 @@ func TestClient_ListPolicySets(t *testing.T) {
 	assert.Equal(t, http.MethodGet, gotReq.Method)
 	assert.Equal(t, "/api/v2/abac/policy-sets", gotReq.URL.Path)
 	assert.Equal(t, "test-project-uuid", gotReq.Header.Get("X-Zep-Project"))
+}
+
+func TestClient_SendsAccountHeader(t *testing.T) {
+	var gotReq *http.Request
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotReq = r
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(PolicySetList{})
+	}))
+	defer srv.Close()
+
+	// A configured account UUID is sent as X-Zep-Account-UUID.
+	_, err := NewClient(srv.Client(), srv.URL, "test-project", "acct-123").
+		ListPolicySets(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, "acct-123", gotReq.Header.Get("X-Zep-Account-UUID"))
+
+	// An empty account UUID omits the header, letting the server resolve the
+	// caller's default membership.
+	_, err = NewClient(srv.Client(), srv.URL, "test-project", "").
+		ListPolicySets(context.Background())
+	require.NoError(t, err)
+	assert.Empty(t, gotReq.Header.Get("X-Zep-Account-UUID"))
 }
 
 func TestClient_GetPolicySet(t *testing.T) {

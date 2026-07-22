@@ -41,7 +41,7 @@ func newABACClientDefault(cmd *cobra.Command) (*abac.Client, error) {
 	if projectUUID == "" {
 		return nil, fmt.Errorf("no project configured; run \"zepctl config set-project\" to select a project")
 	}
-	return abac.NewClient(httpClient, baseURL, projectUUID), nil
+	return abac.NewClient(httpClient, baseURL, projectUUID, config.GetAccountUUID()), nil
 }
 
 // validateUUID parses value as a UUID and returns a formatted error on failure.

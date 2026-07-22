@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
+	"strings"
 
 	zepclient "github.com/getzep/zep-go/v3/client"
 	"github.com/getzep/zep-go/v3/option"
@@ -32,6 +34,11 @@ const credentialTypeAnnotation = "zepctl_credential_type" //nolint:gosec // Anno
 // projectHeader is the HTTP header used to specify the target project
 // for bearer-authenticated requests.
 const projectHeader = "X-Zep-Project"
+
+// accountHeader selects the active account for multi-account bearer
+// requests. Omitted when no account is configured, letting the server pick
+// the default membership.
+const accountHeader = "X-Zep-Account-UUID"
 
 // Client is an alias for the Zep client.
 type Client = zepclient.Client
@@ -86,6 +93,9 @@ func NewWithCredential(ctx context.Context, credType CredentialType) (*Client, e
 		if projectUUID := config.GetProjectUUID(); projectUUID != "" {
 			headers.Set(projectHeader, projectUUID)
 		}
+		if accountUUID := config.GetAccountUUID(); accountUUID != "" {
+			headers.Set(accountHeader, accountUUID)
+		}
 		opts = append(
 			opts,
 			option.WithHTTPClient(httpClient),
@@ -100,10 +110,32 @@ func NewWithCredential(ctx context.Context, credType CredentialType) (*Client, e
 	}
 
 	if apiURL := config.GetAPIURL(); apiURL != "" {
-		opts = append(opts, option.WithBaseURL(apiURL))
+		opts = append(opts, option.WithBaseURL(normalizeSDKBaseURL(apiURL)))
 	}
 
 	return zepclient.NewClient(opts...), nil
+}
+
+// sdkAPIVersionPathRE matches an /api/vN segment anywhere in a URL's path,
+// e.g. /api/v2 or /api/v2/. Used to decide whether normalizeSDKBaseURL
+// should append the version suffix the zep-go SDK requires.
+var sdkAPIVersionPathRE = regexp.MustCompile(`(?i)/api/v\d+(/|$)`)
+
+// normalizeSDKBaseURL appends /api/v2 to a base URL that doesn't already
+// carry an /api/vN segment, so users can configure friendly hosts like
+// https://api.getzep.com without having to know the SDK's expected path
+// prefix. URLs that already include an /api/vN segment are
+// returned unchanged (other than trimming trailing slashes), preserving the
+// caller's chosen version.
+func normalizeSDKBaseURL(raw string) string {
+	if raw == "" {
+		return raw
+	}
+	trimmed := strings.TrimRight(raw, "/")
+	if sdkAPIVersionPathRE.MatchString(trimmed) {
+		return trimmed
+	}
+	return trimmed + "/api/v2"
 }
 
 // newBearerClient returns an *http.Client that automatically attaches

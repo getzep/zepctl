@@ -1,17 +1,16 @@
 package auth
 
-// Default OAuth configuration values. These can be overridden at build
-// time via -ldflags for development/testing:
+// Default OAuth configuration values. These are the production tenant's
+// settings, so a bare `auth login` with no --env authenticates against
+// production out of the box.
 //
-//	go build -ldflags "-X github.com/getzep/zepctl/internal/auth.defaultIssuer=https://dev.kinde.com \
-//	                    -X github.com/getzep/zepctl/internal/auth.defaultClientID=dev-client-id"
-//
-// They can also be overridden per-profile via the `oauth-issuer` and
-// `oauth-client-id` config fields, so a single binary can authenticate
-// against multiple OAuth tenants. See OAuthConfigFor.
+// They can be overridden per-profile via the `oauth-issuer`,
+// `oauth-client-id`, and `oauth-audience` config fields, so a single binary
+// can authenticate against multiple OAuth tenants. See OAuthConfigFor.
 var (
-	defaultIssuer   = "https://getzep.kinde.com"
+	defaultIssuer   = "https://auth.getzep.com"
 	defaultClientID = "8b0f41c63c6141c282c3b4dfd740708d"
+	defaultAudience = "urn:zep:zepctl"
 )
 
 // DefaultOAuthConfig returns the OAuth configuration for zepctl using
@@ -21,13 +20,14 @@ var (
 // for a "Front-end" application, which has no client secret. It is safe to
 // commit to source control and compile into the binary.
 //
-// Audience is intentionally empty in the build-time defaults. Profiles that
-// target a backend which enforces the aud claim must provide one explicitly
-// via the OAuth audience profile field (or via an environment preset).
+// The audience is a public token-audience identifier (it rides in every
+// issued token), not a secret. It must be requested at login because the
+// production API enforces the aud claim; without it every bearer request 401s.
 func DefaultOAuthConfig() *OAuthConfig {
 	return &OAuthConfig{
 		Issuer:   defaultIssuer,
 		ClientID: defaultClientID,
+		Audience: defaultAudience,
 	}
 }
 
