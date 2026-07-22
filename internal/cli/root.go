@@ -45,12 +45,14 @@ func init() {
 	rootCmd.PersistentFlags().BoolP("quiet", "q", false, "Suppress non-essential output")
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "Enable verbose output")
 	rootCmd.PersistentFlags().String("project", "", "Project UUID for this command")
+	rootCmd.PersistentFlags().String("account", "", "Account UUID for this command (bearer auth; disambiguates multi-account members)")
 
 	_ = viper.BindPFlag("api-key", rootCmd.PersistentFlags().Lookup("api-key"))
 	_ = viper.BindPFlag("api-url", rootCmd.PersistentFlags().Lookup("api-url"))
 	_ = viper.BindPFlag("profile", rootCmd.PersistentFlags().Lookup("profile"))
 	_ = viper.BindPFlag("output", rootCmd.PersistentFlags().Lookup("output"))
 	_ = viper.BindPFlag("project", rootCmd.PersistentFlags().Lookup("project"))
+	_ = viper.BindPFlag("account", rootCmd.PersistentFlags().Lookup("account"))
 }
 
 func initConfig() {

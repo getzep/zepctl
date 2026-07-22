@@ -308,6 +308,29 @@ func GetProjectUUID() string {
 	return ""
 }
 
+// GetAccountUUID returns the account UUID to scope bearer requests to,
+// checking flags/env first, then the current profile. Empty when no account
+// is configured, in which case the server resolves the caller's default
+// membership. Sent as the X-Zep-Account-UUID header on bearer requests to
+// disambiguate multi-account members.
+func GetAccountUUID() string {
+	// Flag/env takes precedence
+	if a := viper.GetString("account"); a != "" {
+		return a
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		return ""
+	}
+
+	if profile := cfg.GetCurrentProfile(); profile != nil {
+		return profile.AccountUUID
+	}
+
+	return ""
+}
+
 // GetAPIURL returns the API URL to use, checking flags, env, and profile.
 // Returns empty string if no explicit URL is configured, allowing the SDK to use its default.
 func GetAPIURL() string {

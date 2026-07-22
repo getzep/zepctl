@@ -356,6 +356,34 @@ func TestNewWithCredential_Bearer_NoProfile(t *testing.T) {
 	}
 }
 
+func TestNormalizeSDKBaseURL(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"empty stays empty", "", ""},
+		{"bare host gets /api/v2", "https://api.development.example.com", "https://api.development.example.com/api/v2"},
+		{"trailing slash gets /api/v2", "https://api.development.example.com/", "https://api.development.example.com/api/v2"},
+		{"already versioned is unchanged", "https://api.development.example.com/api/v2", "https://api.development.example.com/api/v2"},
+		{"versioned with trailing slash is trimmed", "https://api.development.example.com/api/v2/", "https://api.development.example.com/api/v2"},
+		{"different version is preserved", "https://api.development.example.com/api/v3", "https://api.development.example.com/api/v3"},
+		{"two-digit version is preserved", "https://api.development.example.com/api/v10", "https://api.development.example.com/api/v10"},
+		{"localhost without version", "http://localhost:8000", "http://localhost:8000/api/v2"},
+		{"localhost with version", "http://localhost:8000/api/v2", "http://localhost:8000/api/v2"},
+		{"proxied path keeps prefix and gets /api/v2", "https://proxy.example.com/zep", "https://proxy.example.com/zep/api/v2"},
+		{"proxied path that already includes /api/v2 is unchanged", "https://proxy.example.com/zep/api/v2", "https://proxy.example.com/zep/api/v2"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := normalizeSDKBaseURL(tt.in)
+			if got != tt.want {
+				t.Errorf("normalizeSDKBaseURL(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 // roundTripFunc adapts a function to http.RoundTripper.
 type roundTripFunc func(*http.Request) (*http.Response, error)
 

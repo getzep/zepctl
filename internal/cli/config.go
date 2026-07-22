@@ -166,13 +166,15 @@ var configAddProfileCmd = &cobra.Command{
 			}
 		}
 
+		var target *config.Profile
 		if existing == nil {
-			newProfile := config.Profile{Name: name}
-			applyEnvAndOverrides(&newProfile, env, cmd)
-			cfg.Profiles = append(cfg.Profiles, newProfile)
+			cfg.Profiles = append(cfg.Profiles, config.Profile{Name: name})
+			target = &cfg.Profiles[len(cfg.Profiles)-1]
 		} else {
-			applyEnvAndOverrides(existing, env, cmd)
+			target = existing
 		}
+		applyEnvAndOverrides(target, env, cmd)
+		setIfChanged(cmd, "account", &target.AccountUUID)
 
 		if cfg.CurrentProfile == "" {
 			cfg.CurrentProfile = name
@@ -368,6 +370,7 @@ func init() {
 	configAddProfileCmd.Flags().String("oauth-client-id", "", "Override OAuth client ID for `auth login` (uses build-time default if unset)")
 	configAddProfileCmd.Flags().String("oauth-audience", "", "Override OAuth audience for `auth login` (uses build-time default if unset)")
 	configAddProfileCmd.Flags().String("env", "", "Apply a named environment preset (see \"config add-environment\"); explicit per-field flags override the preset")
+	configAddProfileCmd.Flags().String("account", "", "Account UUID to bind to the profile (sent as X-Zep-Account-UUID on bearer requests)")
 	configAddProfileCmd.Flags().Bool("no-api-key", false, "Create a bearer-only profile with no API key (skip prompt)")
 	configUpdateProfileCmd.Flags().String("api-key", "", "Update API key (stored in system keychain)")
 	configUpdateProfileCmd.Flags().String("api-url", "", "Update API URL")

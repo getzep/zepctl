@@ -12,19 +12,24 @@ import (
 
 // Client provides methods for ABAC API endpoints. The caller obtains
 // httpClient from client.NewBearerHTTPClient (which handles token
-// refresh) and projectUUID from config.GetProjectUUID.
+// refresh), projectUUID from config.GetProjectUUID, and accountUUID from
+// config.GetAccountUUID.
 type Client struct {
 	HTTP        *http.Client
 	BaseURL     string
 	ProjectUUID string
+	AccountUUID string
 }
 
-// NewClient creates an ABAC client.
-func NewClient(httpClient *http.Client, baseURL, projectUUID string) *Client {
+// NewClient creates an ABAC client. accountUUID may be empty, in which case
+// no X-Zep-Account-UUID header is sent and the server resolves the caller's
+// default membership.
+func NewClient(httpClient *http.Client, baseURL, projectUUID, accountUUID string) *Client {
 	return &Client{
 		HTTP:        httpClient,
 		BaseURL:     strings.TrimRight(baseURL, "/"),
 		ProjectUUID: projectUUID,
+		AccountUUID: accountUUID,
 	}
 }
 
@@ -209,6 +214,9 @@ func (c *Client) doRequestRaw(ctx context.Context, method, path string, body any
 	}
 	if c.ProjectUUID != "" {
 		req.Header.Set("X-Zep-Project", c.ProjectUUID)
+	}
+	if c.AccountUUID != "" {
+		req.Header.Set("X-Zep-Account-UUID", c.AccountUUID)
 	}
 
 	resp, err := c.HTTP.Do(req)

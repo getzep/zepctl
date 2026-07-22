@@ -105,8 +105,8 @@ type projectInfo struct {
 
 // authenticateAndGetProjects calls POST /api/web/v1/authenticate to resolve
 // the bearer-authenticated user's account UUID and accessible projects in a
-// single round trip. The endpoint returns AccountMemberResponse, which carries
-// both account_uuid and the projects array (src/api/apidata/account.go).
+// single round trip. The response body carries both the account_uuid and the
+// projects array.
 func authenticateAndGetProjects(ctx context.Context, httpClient *http.Client, baseURL string) (string, []projectInfo, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/api/web/v1/authenticate", http.NoBody)
 	if err != nil {
