@@ -91,10 +91,10 @@ var userGroupCreateCmd = &cobra.Command{
 var userGroupUpdateCmd = &cobra.Command{
 	Use:   "update <group-uuid>",
 	Short: "Update a managed UserGroup's name or description",
-	Long: "Updates a managed UserGroup. Without --expected-version the command reads the\n" +
-		"group's current version first and sends that, which is last-writer-wins. Pass\n" +
-		"--expected-version to fail with a conflict when someone else has updated the\n" +
-		"group since you read it.",
+	Long: "Updates a managed UserGroup. Without --expected-version, the command reads and\n" +
+		"sends the group's current version. A conflict occurs only if another update\n" +
+		"happens between the read and the write. With --expected-version, a conflict\n" +
+		"occurs if the group's version differs from that value.",
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := validateUUID(args[0], userGroupLabel); err != nil {
@@ -527,7 +527,7 @@ func init() {
 	userGroupUpdateCmd.Flags().String("name", "", "New group name")
 	userGroupUpdateCmd.Flags().String("description", "", "New group description")
 	userGroupUpdateCmd.Flags().Int("expected-version", 0,
-		"Version the update expects; defaults to the group's current version")
+		"Expected group version; the update conflicts if the current version differs. Without this flag, the command reads and sends the current version and conflicts only if another update happens between the read and the write")
 
 	userGroupDeleteCmd.Flags().Bool("force", false, "Skip confirmation prompt")
 

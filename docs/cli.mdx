@@ -717,7 +717,7 @@ zepctl user-group explain  <group-uuid> --action <name> [--graph <graph-uuid>]
 |------|-------------|
 | `--name` | (`create`, `update`) Group name; required on `create` |
 | `--description` | (`create`, `update`) Group description |
-| `--expected-version` | (`update`) Version the update expects; omit for last-writer-wins |
+| `--expected-version` | (`update`) Version the update must match; if the group version differs, the update conflicts. Without the flag, the command reads and sends the current version; a conflict occurs only if another update happens between the read and the write. |
 | `--search` | (`list`, `members list`, `members candidates`) Name search; user search for the member commands |
 | `--action` | (`evaluate`, `explain`) Required. Action name to evaluate (e.g. `graph.search`) |
 | `--graph` | (`evaluate`, `explain`) Standalone graph UUID to evaluate as the resource |

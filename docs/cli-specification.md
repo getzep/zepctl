@@ -853,13 +853,13 @@ zepctl user-group explain <group-uuid> --action <name> [--graph <graph-uuid>]
 |------|-------------|
 | `--name` | (`create`, `update`) Group name; required on `create` |
 | `--description` | (`create`, `update`) Group description |
-| `--expected-version` | (`update`) Version the update expects; omit for last-writer-wins |
+| `--expected-version` | (`update`) Version the update must match; if the group version differs, the update conflicts. Without the flag, the command reads and sends the current version; a conflict occurs only if another update happens between the read and the write. |
 | `--search` | (list commands) Name search; user search for the member commands |
 | `--force` | (`delete`) Skip confirmation prompt |
 | `--action` | (`evaluate`, `explain`) Required. Action name to evaluate |
 | `--graph` | (`evaluate`, `explain`) Standalone graph UUID to evaluate as the resource |
 
-- `update` requires at least one of `--name` or `--description`. Without `--expected-version` it reads the group's current version first (last-writer-wins); with it, a concurrent update returns a conflict.
+- `update` requires at least one of `--name` or `--description`. Without `--expected-version`, it reads and sends the group's current version, so a conflict occurs only if another update happens between the read and the write. With `--expected-version`, it returns a conflict if the group's version differs from that value.
 - `delete` removes the group's memberships and policy attachments. It requires `--force` in non-interactive contexts.
 - `members candidates` lists active users who are not yet members. Adding an existing member or removing an absent one is a successful no-op and is reported in the count. The server accepts up to 50 UUIDs per call.
 - Only authorization policy sets can attach to a UserGroup; retention sets are rejected.

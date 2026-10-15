@@ -59,6 +59,20 @@ func TestConfirmYesNo(t *testing.T) {
 	}
 }
 
+func TestReadLineKeepsPipedInputForLaterPrompts(t *testing.T) {
+	stubStdin(t, false, "y\nsecret-key\n")
+
+	assert.Equal(t, "y", readLine())
+	assert.Equal(t, "secret-key", readLine())
+	assert.Empty(t, readLine())
+}
+
+func TestReadLineWithoutTrailingNewline(t *testing.T) {
+	stubStdin(t, false, "abc")
+
+	assert.Equal(t, "abc", readLine())
+}
+
 func TestConfirmDeletion_ForceSkipsPrompt(t *testing.T) {
 	stubStdin(t, false, "")
 	cmd, stderr := deleteTestCommand(t)

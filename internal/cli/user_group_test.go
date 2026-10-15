@@ -254,8 +254,9 @@ func TestUserGroupUpdate_NoFieldsRequested(t *testing.T) {
 	assert.Contains(t, err.Error(), "at least one of --name or --description is required")
 }
 
-// Without --expected-version the command reads the current version and
-// sends it, which is last-writer-wins.
+// Without --expected-version, the command reads and sends the current
+// version. A concurrent update between the read and the write causes a
+// conflict.
 func TestUserGroupUpdate_ResolvesCurrentVersion(t *testing.T) {
 	var gotBody map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

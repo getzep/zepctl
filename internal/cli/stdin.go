@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"os"
@@ -25,11 +24,26 @@ var (
 	stdinIsTerminal           = func() bool { return term.IsTerminal(int(os.Stdin.Fd())) }
 )
 
-// readLine reads one line of input and trims its surrounding whitespace. A
-// read error yields an empty line, which every prompt treats as no answer.
+// readLine reads one line of input and trims its surrounding whitespace. It
+// reads one byte at a time so a later prompt can still read the rest of piped
+// input. A read error stops the read, and the function returns any bytes read
+// before the error.
 func readLine() string {
-	line, _ := bufio.NewReader(stdinReader).ReadString('\n')
-	return strings.TrimSpace(line)
+	var line []byte
+	var char [1]byte
+	for {
+		n, err := stdinReader.Read(char[:])
+		if n > 0 {
+			if char[0] == '\n' {
+				break
+			}
+			line = append(line, char[0])
+		}
+		if err != nil {
+			break
+		}
+	}
+	return strings.TrimSpace(string(line))
 }
 
 // confirmYesNo reports whether a [y/N] prompt was answered yes.
