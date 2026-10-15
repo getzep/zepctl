@@ -1,14 +1,12 @@
 package cli
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
 
 	"github.com/getzep/zepctl/internal/abac"
@@ -194,19 +192,10 @@ var policySetDeleteCmd = &cobra.Command{
 		if err := validateUUID(args[0], "policy set"); err != nil {
 			return err
 		}
-		force, _ := cmd.Flags().GetBool("force")
-		if !force {
-			if !term.IsTerminal(int(os.Stdin.Fd())) {
-				return fmt.Errorf("use --force to delete without confirmation")
-			}
-			fmt.Fprintf(cmd.ErrOrStderr(),
-				"Delete policy set %s? This will also remove all attachments. [y/N]: ", args[0])
-			reader := bufio.NewReader(os.Stdin)
-			response, _ := reader.ReadString('\n')
-			response = strings.TrimSpace(strings.ToLower(response))
-			if response != "y" && response != "yes" {
-				return nil
-			}
+		confirmed, err := confirmDeletion(cmd,
+			"Delete policy set %s? This will also remove all attachments.", args[0])
+		if err != nil || !confirmed {
+			return err
 		}
 		ac, err := newABACClient(cmd)
 		if err != nil {

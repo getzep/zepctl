@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"os"
@@ -139,10 +138,7 @@ var summaryInstructionsDeleteCmd = &cobra.Command{
 
 		if !force {
 			fmt.Printf("Delete summary instruction %q? [y/N]: ", name)
-			reader := bufio.NewReader(os.Stdin)
-			response, _ := reader.ReadString('\n')
-			response = strings.TrimSpace(strings.ToLower(response))
-			if response != "y" && response != "yes" {
+			if !confirmYesNo() {
 				output.Info("Aborted")
 				return nil
 			}

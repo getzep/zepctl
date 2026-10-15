@@ -1,13 +1,10 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
-	"strings"
 
 	"github.com/getzep/zep-go/v3"
 	"github.com/getzep/zepctl/internal/client"
@@ -166,10 +163,7 @@ var threadDeleteCmd = &cobra.Command{
 
 		if !force {
 			fmt.Printf("Delete thread %q? [y/N]: ", threadID)
-			reader := bufio.NewReader(os.Stdin)
-			response, _ := reader.ReadString('\n')
-			response = strings.TrimSpace(strings.ToLower(response))
-			if response != "y" && response != "yes" {
+			if !confirmYesNo() {
 				output.Info("Aborted")
 				return nil
 			}
@@ -274,7 +268,7 @@ var threadAddMessagesCmd = &cobra.Command{
 				return fmt.Errorf("reading file: %w", err)
 			}
 		} else if useStdin {
-			data, err = io.ReadAll(os.Stdin)
+			data, err = readStdinAll()
 			if err != nil {
 				return fmt.Errorf("reading stdin: %w", err)
 			}

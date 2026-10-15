@@ -1,11 +1,9 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 
@@ -115,10 +113,7 @@ var graphDeleteCmd = &cobra.Command{
 
 		if !force {
 			fmt.Printf("Delete graph %q? [y/N]: ", graphID)
-			reader := bufio.NewReader(os.Stdin)
-			response, _ := reader.ReadString('\n')
-			response = strings.TrimSpace(strings.ToLower(response))
-			if response != "y" && response != "yes" {
+			if !confirmYesNo() {
 				output.Info("Aborted")
 				return nil
 			}
@@ -246,7 +241,7 @@ var graphAddCmd = &cobra.Command{
 					return fmt.Errorf("reading file: %w", err)
 				}
 			} else if useStdin {
-				data, err = io.ReadAll(os.Stdin)
+				data, err = readStdinAll()
 				if err != nil {
 					return fmt.Errorf("reading stdin: %w", err)
 				}
@@ -302,7 +297,7 @@ var graphAddCmd = &cobra.Command{
 			}
 			dataContent = string(data)
 		} else if useStdin {
-			data, err := io.ReadAll(os.Stdin)
+			data, err := readStdinAll()
 			if err != nil {
 				return fmt.Errorf("reading stdin: %w", err)
 			}

@@ -309,12 +309,7 @@ func TestPolicySetUpdate_NotFound(t *testing.T) {
 // --- Policy Set Delete (Sections 3.5.3, 3.5.4, 3.5.5) ---
 
 func TestPolicySetDelete_NonInteractiveWithoutForce(t *testing.T) {
-	// Replace stdin with a closed pipe (non-terminal, no data).
-	oldStdin := os.Stdin
-	r, w, _ := os.Pipe()
-	os.Stdin = r
-	w.Close()
-	defer func() { os.Stdin = oldStdin }()
+	stubStdin(t, false, "")
 
 	err := policySetDeleteCmd.RunE(policySetDeleteCmd, []string{testUUID})
 	require.Error(t, err)

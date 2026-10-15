@@ -1,10 +1,7 @@
 package cli
 
 import (
-	"bufio"
 	"fmt"
-	"os"
-	"strings"
 
 	"github.com/getzep/zepctl/internal/config"
 	"github.com/getzep/zepctl/internal/output"
@@ -138,10 +135,7 @@ var configDeleteEnvironmentCmd = &cobra.Command{
 
 		if !force {
 			fmt.Printf("Delete environment %q? [y/N]: ", name)
-			reader := bufio.NewReader(os.Stdin)
-			response, _ := reader.ReadString('\n')
-			response = strings.TrimSpace(strings.ToLower(response))
-			if response != "y" && response != "yes" {
+			if !confirmYesNo() {
 				output.Info("Aborted")
 				return nil
 			}

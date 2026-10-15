@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"strings"
@@ -115,9 +114,7 @@ var configAddProfileCmd = &cobra.Command{
 			}
 
 			fmt.Printf("Profile %q has no API key. Add one to this profile? [Y/n]: ", name)
-			reader := bufio.NewReader(os.Stdin)
-			response, _ := reader.ReadString('\n')
-			response = strings.TrimSpace(strings.ToLower(response))
+			response := strings.ToLower(readLine())
 			if response != "" && response != "y" && response != "yes" {
 				output.Info("Aborted")
 				return nil
@@ -141,19 +138,17 @@ var configAddProfileCmd = &cobra.Command{
 		if !noAPIKey {
 			if apiKey == "" {
 				fmt.Print("API Key: ")
-				if term.IsTerminal(int(os.Stdin.Fd())) {
+				if stdinIsTerminal() {
 					keyBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
 					fmt.Println() // newline after hidden input
 					if err != nil {
 						return fmt.Errorf("reading API key: %w", err)
 					}
-					apiKey = string(keyBytes)
+					apiKey = strings.TrimSpace(string(keyBytes))
 				} else {
 					// Fallback for non-terminal input (piped)
-					reader := bufio.NewReader(os.Stdin)
-					apiKey, _ = reader.ReadString('\n')
+					apiKey = readLine()
 				}
-				apiKey = strings.TrimSpace(apiKey)
 			}
 
 			if apiKey == "" {
@@ -215,10 +210,7 @@ var configDeleteProfileCmd = &cobra.Command{
 
 		if !force {
 			fmt.Printf("Delete profile %q? [y/N]: ", name)
-			reader := bufio.NewReader(os.Stdin)
-			response, _ := reader.ReadString('\n')
-			response = strings.TrimSpace(strings.ToLower(response))
-			if response != "y" && response != "yes" {
+			if !confirmYesNo() {
 				output.Info("Aborted")
 				return nil
 			}

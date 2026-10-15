@@ -17,7 +17,7 @@
 zepctl supports two authentication modes:
 
 - **API key** (long-lived): the original mode, used for headless / CI scenarios. Pass via `ZEP_API_KEY` or store per-profile in the system keychain.
-- **Bearer token** (OAuth / Kinde): obtained interactively via `zepctl auth login`. Required for the ABAC management commands (`policy-set`, `api-key`) and the `config set-project` interactive flow. Refresh tokens are stored in the system keychain.
+- **Bearer token** (OAuth / Kinde): obtained interactively via `zepctl auth login`. Required for the ABAC management commands (`policy-set`, `api-key`, `user-group`, and `user groups|evaluate|explain`) and the `config set-project` interactive flow. Refresh tokens are stored in the system keychain.
 
 Both modes coexist on the same profile. Commands that require bearer auth use the bearer token even if an API key is also present.
 
@@ -240,6 +240,28 @@ zepctl user threads <user-id> [flags]
 ```bash
 zepctl user node <user-id>
 ```
+
+#### List Effective UserGroups
+
+```bash
+zepctl user groups <user-uuid>
+```
+
+Lists the user's effective UserGroups: the virtual **All Users** group plus every active managed membership. Requires a bearer token and takes a user UUID, not a user ID.
+
+#### Dry-Run an ABAC Decision for a User
+
+```bash
+zepctl user evaluate <user-uuid> --action <name> [--graph <graph-uuid>]
+zepctl user explain <user-uuid> --action <name> [--graph <graph-uuid>]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--action` | Required. Action name to evaluate (e.g. `graph.search`) |
+| `--graph` | Standalone graph UUID to evaluate as the resource |
+
+These evaluate the policy sets attached to the user's effective UserGroups against a default-deny base; a deny from any group wins. Both require a bearer token, take a user UUID, and always exit 0 on a successful API call. See the UserGroup ABAC commands below for the output format.
 
 ---
 
@@ -793,6 +815,71 @@ zepctl api-key policy-sets attach abcd1234-... efgh5678-...
 
 # Check what the evaluator would decide for thread.get
 zepctl api-key evaluate abcd1234-... --action thread.get -o json
+```
+
+---
+
+### UserGroup ABAC Commands
+
+Manage UserGroups, their members, and the policy sets attached to them. All `user-group` commands require a bearer token.
+
+Every project has a virtual **All Users** group containing every active user. It accepts policy attachments -- the project-wide grant path -- but cannot be renamed, deleted, or given members; those mutations return a conflict. It sorts first in `user-group list`.
+
+```bash
+# Groups
+zepctl user-group list [--page N] [--page-size N] [--search TERM]
+zepctl user-group get <group-uuid>
+zepctl user-group create --name <name> [--description <text>]
+zepctl user-group update <group-uuid> [--name <name>] [--description <text>] [--expected-version N]
+zepctl user-group delete <group-uuid> [--force]
+
+# Membership (users identified by UUID)
+zepctl user-group members list <group-uuid> [--page N] [--page-size N] [--search TERM]
+zepctl user-group members candidates <group-uuid> [--page N] [--page-size N] [--search TERM]
+zepctl user-group members add <group-uuid> <user-uuid>...
+zepctl user-group members remove <group-uuid> <user-uuid>...
+
+# Policy set attachments
+zepctl user-group policy-sets list <group-uuid>
+zepctl user-group policy-sets attach <group-uuid> <policy-set-uuid>
+zepctl user-group policy-sets detach <group-uuid> <policy-set-uuid>
+
+# Dry-run policy decisions (do not perform the action)
+zepctl user-group evaluate <group-uuid> --action <name> [--graph <graph-uuid>]
+zepctl user-group explain <group-uuid> --action <name> [--graph <graph-uuid>]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--name` | (`create`, `update`) Group name; required on `create` |
+| `--description` | (`create`, `update`) Group description |
+| `--expected-version` | (`update`) Version the update expects; omit for last-writer-wins |
+| `--search` | (list commands) Name search; user search for the member commands |
+| `--force` | (`delete`) Skip confirmation prompt |
+| `--action` | (`evaluate`, `explain`) Required. Action name to evaluate |
+| `--graph` | (`evaluate`, `explain`) Standalone graph UUID to evaluate as the resource |
+
+- `update` requires at least one of `--name` or `--description`. Without `--expected-version` it reads the group's current version first (last-writer-wins); with it, a concurrent update returns a conflict.
+- `delete` removes the group's memberships and policy attachments. It requires `--force` in non-interactive contexts.
+- `members candidates` lists active users who are not yet members. Adding an existing member or removing an absent one is a successful no-op and is reported in the count. The server accepts up to 50 UUIDs per call.
+- Only authorization policy sets can attach to a UserGroup; retention sets are rejected.
+- `evaluate` adds the resolved principal, resource, and default-deny base to the `api-key evaluate` output. `explain` adds the effective UserGroups, the groups contributing each policy set, whether a match was graph-specific or action-wide, skipped policies, object constraints, and dead graph references.
+- `--graph` takes a standalone graph's canonical UUID, not its `graph_id`. Omit it for the action-only question.
+- Both dry runs always exit 0 on a successful API call regardless of outcome.
+
+**Examples**:
+```bash
+# Create a group, populate it, grant it a policy set
+zepctl user-group create --name Support --description "Support-facing users"
+zepctl user-group members candidates abcd1234-...
+zepctl user-group members add abcd1234-... 2b3c4d5e-...
+zepctl user-group policy-sets attach abcd1234-... efgh5678-...
+
+# Ask why a graph search would be allowed or denied
+zepctl user-group explain abcd1234-... --action graph.search --graph 4d5e6f7a-...
+
+# Grant the same policy set to every user in the project
+zepctl user-group policy-sets attach <all-users-uuid> efgh5678-...
 ```
 
 ---
