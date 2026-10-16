@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -237,23 +238,7 @@ var apiKeyEvaluateCmd = &cobra.Command{
 		if err := validateUUID(args[0], "API key"); err != nil {
 			return err
 		}
-		action, _ := cmd.Flags().GetString("action")
-		ac, err := newABACClient(cmd)
-		if err != nil {
-			return err
-		}
-		result, err := ac.EvaluatePolicy(cmd.Context(), args[0], action)
-		if err != nil {
-			if abac.IsNotFound(err) {
-				return fmt.Errorf("API key not found: %s", args[0])
-			}
-			return fmt.Errorf("evaluating policy: %w", err)
-		}
-		if output.GetFormat() == output.FormatTable {
-			renderEvaluateTable(cmd.OutOrStdout(), result)
-			return nil
-		}
-		return output.FprintRaw(cmd.OutOrStdout(), result.RawJSON)
+		return runEvaluate(cmd, abac.Principal{Type: abac.PrincipalAPIKey, UUID: args[0]}, "API key")
 	},
 }
 
@@ -268,70 +253,234 @@ var apiKeyExplainCmd = &cobra.Command{
 		if err := validateUUID(args[0], "API key"); err != nil {
 			return err
 		}
-		action, _ := cmd.Flags().GetString("action")
-		ac, err := newABACClient(cmd)
-		if err != nil {
-			return err
-		}
-		result, err := ac.ExplainPolicy(cmd.Context(), args[0], action)
-		if err != nil {
-			if abac.IsNotFound(err) {
-				return fmt.Errorf("API key not found: %s", args[0])
-			}
-			return fmt.Errorf("explaining policy: %w", err)
-		}
-		if output.GetFormat() == output.FormatTable {
-			renderExplainTable(cmd.OutOrStdout(), result)
-			return nil
-		}
-		return output.FprintRaw(cmd.OutOrStdout(), result.RawJSON)
+		return runExplain(cmd, abac.Principal{Type: abac.PrincipalAPIKey, UUID: args[0]}, "API key")
 	},
 }
 
+// runEvaluate performs an evaluate dry run for principal and renders the
+// result. label names the principal in a not-found message. Commands
+// that accept --graph pass a resource; the others cannot.
+func runEvaluate(cmd *cobra.Command, principal abac.Principal, label string) error {
+	action, _ := cmd.Flags().GetString("action")
+	resource, err := dryRunResource(cmd)
+	if err != nil {
+		return err
+	}
+	ac, err := newABACClient(cmd)
+	if err != nil {
+		return err
+	}
+	result, err := ac.EvaluatePolicy(cmd.Context(), principal, action, resource)
+	if err != nil {
+		return dryRunError(err, "evaluating policy", principal, label, resource)
+	}
+	if output.GetFormat() == output.FormatTable {
+		renderEvaluateTable(cmd.OutOrStdout(), result)
+		return nil
+	}
+	return output.FprintRaw(cmd.OutOrStdout(), result.RawJSON)
+}
+
+// runExplain is runEvaluate plus the decision trace.
+func runExplain(cmd *cobra.Command, principal abac.Principal, label string) error {
+	action, _ := cmd.Flags().GetString("action")
+	resource, err := dryRunResource(cmd)
+	if err != nil {
+		return err
+	}
+	ac, err := newABACClient(cmd)
+	if err != nil {
+		return err
+	}
+	result, err := ac.ExplainPolicy(cmd.Context(), principal, action, resource)
+	if err != nil {
+		return dryRunError(err, "explaining policy", principal, label, resource)
+	}
+	if output.GetFormat() == output.FormatTable {
+		renderExplainTable(cmd.OutOrStdout(), result)
+		return nil
+	}
+	return output.FprintRaw(cmd.OutOrStdout(), result.RawJSON)
+}
+
+// dryRunError names the principal in a not-found message only when the
+// request carried no resource. A dry run with --graph gets the same 404
+// for an absent, deleted, or cross-project graph, so the server's message
+// has to decide which object was not found.
+func dryRunError(err error, action string, principal abac.Principal, label string, resource *abac.Resource) error {
+	if resource == nil && abac.IsNotFound(err) {
+		return fmt.Errorf("%s not found: %s", label, principal.UUID)
+	}
+	return fmt.Errorf("%s: %w", action, err)
+}
+
+// dryRunResource builds the optional graph resource from --graph. The
+// value is a standalone graph's canonical UUID, not a graph ID. Commands
+// without the flag always evaluate action-only.
+func dryRunResource(cmd *cobra.Command) (*abac.Resource, error) {
+	graphUUID, _ := cmd.Flags().GetString("graph")
+	if graphUUID == "" {
+		return nil, nil
+	}
+	if err := validateUUID(graphUUID, "graph"); err != nil {
+		return nil, err
+	}
+	return &abac.Resource{Type: abac.ResourceGraph, UUID: graphUUID}, nil
+}
+
 func renderEvaluateTable(w io.Writer, r *abac.EvaluateResponse) {
+	renderPrincipalAndResource(w, r.Principal, r.Resource)
 	fmt.Fprintf(w, "Outcome:                %s\n", r.Outcome)
 	fmt.Fprintf(w, "ABAC:                   %s\n", r.ABAC)
 	fmt.Fprintf(w, "ABAC shadow:            %s\n", r.ABACShadow)
 	fmt.Fprintf(w, "Role allows:            %t\n", r.RoleAllows)
+	renderBase(w, r.Base, r.BaseAllows)
 	fmt.Fprintf(w, "Would log disagreement: %t\n", r.WouldLogDisagreement)
 }
 
 func renderExplainTable(w io.Writer, r *abac.ExplainResponse) {
 	fmt.Fprintf(w, "Action:                 %s\n", r.Trace.Action)
+	renderPrincipalAndResource(w, r.Principal, r.Resource)
 	fmt.Fprintf(w, "Outcome:                %s\n", r.Outcome)
 	fmt.Fprintf(w, "ABAC:                   %s\n", r.ABAC)
 	fmt.Fprintf(w, "ABAC shadow:            %s\n", r.ABACShadow)
 	fmt.Fprintf(w, "Role allows:            %t\n", r.RoleAllows)
 	fmt.Fprintf(w, "Registry read-only:     %t\n", r.Trace.RegistryEntry.ReadOnly)
+	renderBase(w, r.Base, r.BaseAllows)
 	fmt.Fprintf(w, "Would log disagreement: %t\n", r.WouldLogDisagreement)
 	fmt.Fprintln(w)
 
-	if len(r.Trace.EvaluatedSets) == 0 {
-		fmt.Fprintln(w, "Evaluated policy sets: (none)")
-	} else {
-		fmt.Fprintln(w, "Evaluated policy sets:")
-		for _, s := range r.Trace.EvaluatedSets {
-			header := fmt.Sprintf("  %s (%s, set mode: %s)", s.Name, truncateUUID(s.UUID), s.SetMode)
-			if len(s.Matched) == 0 {
-				fmt.Fprintln(w, header+" -- no policies matched")
-				continue
-			}
-			fmt.Fprintln(w, header)
-			for _, m := range s.Matched {
-				fmt.Fprintf(w, "    [%s] %s -- matched via %s\n", m.Effect, m.PolicyID, m.MatchedVia)
-			}
-		}
+	renderEffectiveGroups(w, r.Trace.ResolvedGroupUUIDs)
+	renderEvaluatedSets(w, r.Trace.EvaluatedSets)
+	fmt.Fprintln(w)
+	renderSkippedSets(w, r.Trace.SkippedSets)
+	renderObjectConstraints(w, r.Trace.ObjectConstraints)
+	renderDeadGraphUUIDs(w, r.Trace.DeadGraphUUIDs)
+}
+
+// renderPrincipalAndResource prints the resolved principal and resource.
+// Both are absent for API key dry runs, whose output is unchanged.
+func renderPrincipalAndResource(w io.Writer, principal *abac.Principal, resource *abac.Resource) {
+	if principal != nil {
+		fmt.Fprintf(w, "Principal:              %s %s\n", principal.Type, principal.UUID)
+	}
+	if resource != nil {
+		fmt.Fprintf(w, "Resource:               %s %s\n", resource.Type, resource.UUID)
+	}
+}
+
+// renderBase prints the evaluation base. User and user group principals
+// report a default-deny base; API key principals report none.
+func renderBase(w io.Writer, base string, baseAllows *bool) {
+	if base != "" {
+		fmt.Fprintf(w, "Base:                   %s\n", base)
+	}
+	if baseAllows != nil {
+		fmt.Fprintf(w, "Base allows:            %t\n", *baseAllows)
+	}
+}
+
+func renderEffectiveGroups(w io.Writer, groupUUIDs []string) {
+	if len(groupUUIDs) == 0 {
+		return
+	}
+	fmt.Fprintln(w, "Effective UserGroups:")
+	for _, groupUUID := range groupUUIDs {
+		fmt.Fprintf(w, "  %s\n", groupUUID)
 	}
 	fmt.Fprintln(w)
+}
 
-	if len(r.Trace.SkippedSets) == 0 {
+func renderEvaluatedSets(w io.Writer, sets []abac.ExplainEvaluatedSet) {
+	if len(sets) == 0 {
+		fmt.Fprintln(w, "Evaluated policy sets: (none)")
+		return
+	}
+	fmt.Fprintln(w, "Evaluated policy sets:")
+	for _, s := range sets {
+		header := fmt.Sprintf("  %s (%s, set mode: %s", s.Name, truncateUUID(s.UUID), s.SetMode)
+		if len(s.ContributingGroupUUIDs) > 0 {
+			header += ", groups: " + strings.Join(truncateUUIDs(s.ContributingGroupUUIDs), ", ")
+		}
+		header += ")"
+		if len(s.Matched) == 0 && len(s.Skipped) == 0 {
+			fmt.Fprintln(w, header+" -- no policies matched")
+			continue
+		}
+		fmt.Fprintln(w, header)
+		for _, m := range s.Matched {
+			fmt.Fprintf(w, "    [%s] %s -- matched via %s%s\n",
+				m.Effect, m.PolicyID, m.MatchedVia, resourceMatchSuffix(m.ResourceMatch))
+		}
+		for _, s := range s.Skipped {
+			fmt.Fprintf(w, "    (skipped) [%s] %s%s\n",
+				s.Effect, s.PolicyID, resourceMatchSuffix(s.ResourceMatch))
+		}
+	}
+}
+
+func renderSkippedSets(w io.Writer, sets []abac.ExplainSkippedSet) {
+	if len(sets) == 0 {
 		fmt.Fprintln(w, "Skipped policy sets: (none)")
 		return
 	}
 	fmt.Fprintln(w, "Skipped policy sets:")
-	for _, s := range r.Trace.SkippedSets {
+	for _, s := range sets {
 		fmt.Fprintf(w, "  %s (%s) -- %s\n", s.Name, truncateUUID(s.UUID), s.Reason)
 	}
+}
+
+func renderObjectConstraints(w io.Writer, constraints *abac.ExplainObjectConstraints) {
+	if constraints == nil || (len(constraints.Include) == 0 && len(constraints.Exclude) == 0) {
+		return
+	}
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Object constraints:")
+	renderConstraintGroups(w, "include", constraints.Include)
+	renderConstraintGroups(w, "exclude", constraints.Exclude)
+}
+
+func renderConstraintGroups(w io.Writer, label string, groups []abac.ExplainConstraintGroup) {
+	for _, g := range groups {
+		keys := make([]string, 0, len(g.Attributes))
+		for key := range g.Attributes {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		pairs := make([]string, 0, len(keys))
+		for _, key := range keys {
+			pairs = append(pairs, fmt.Sprintf("%s=%v", key, g.Attributes[key]))
+		}
+		fmt.Fprintf(w, "  %s: %s (subset match: %t)\n", label, strings.Join(pairs, " "), g.SubsetMatch)
+	}
+}
+
+// renderDeadGraphUUIDs lists graph selectors that no longer resolve to a
+// live graph in the project.
+func renderDeadGraphUUIDs(w io.Writer, graphUUIDs []string) {
+	if len(graphUUIDs) == 0 {
+		return
+	}
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Dead graph references:")
+	for _, graphUUID := range graphUUIDs {
+		fmt.Fprintf(w, "  %s\n", graphUUID)
+	}
+}
+
+func resourceMatchSuffix(resourceMatch string) string {
+	if resourceMatch == "" {
+		return ""
+	}
+	return " -- resource " + resourceMatch
+}
+
+func truncateUUIDs(ids []string) []string {
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i] = truncateUUID(id)
+	}
+	return out
 }
 
 func init() {

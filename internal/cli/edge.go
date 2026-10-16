@@ -1,12 +1,9 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"strings"
 
 	"github.com/getzep/zep-go/v3"
 	zepgraph "github.com/getzep/zep-go/v3/graph"
@@ -191,10 +188,7 @@ var edgeDeleteCmd = &cobra.Command{
 
 		if !force {
 			fmt.Printf("Delete edge %q? [y/N]: ", uuid)
-			reader := bufio.NewReader(os.Stdin)
-			response, _ := reader.ReadString('\n')
-			response = strings.TrimSpace(strings.ToLower(response))
-			if response != "y" && response != "yes" {
+			if !confirmYesNo() {
 				output.Info("Aborted")
 				return nil
 			}

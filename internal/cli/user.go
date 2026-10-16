@@ -1,14 +1,13 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/getzep/zep-go/v3"
+	"github.com/getzep/zepctl/internal/abac"
 	"github.com/getzep/zepctl/internal/client"
 	"github.com/getzep/zepctl/internal/output"
 	"github.com/spf13/cobra"
@@ -17,7 +16,8 @@ import (
 var userCmd = &cobra.Command{
 	Use:   "user",
 	Short: "Manage users",
-	Long:  `Create, list, update, and delete users.`,
+	Long: `Create, list, update, and delete users, inspect their effective UserGroups,
+and dry-run ABAC decisions for a user principal.`,
 }
 
 var userListCmd = &cobra.Command{
@@ -259,10 +259,7 @@ var userDeleteCmd = &cobra.Command{
 
 		if !force {
 			fmt.Printf("Delete user %q and all associated data? This cannot be undone. [y/N]: ", userID)
-			reader := bufio.NewReader(os.Stdin)
-			response, _ := reader.ReadString('\n')
-			response = strings.TrimSpace(strings.ToLower(response))
-			if response != "y" && response != "yes" {
+			if !confirmYesNo() {
 				output.Info("Aborted")
 				return nil
 			}
@@ -341,6 +338,68 @@ var userNodeCmd = &cobra.Command{
 	},
 }
 
+// --- ABAC subcommands (bearer auth, keyed by user UUID) ---
+
+var userMembershipsCmd = &cobra.Command{
+	Use:   "groups <user-uuid>",
+	Short: "List the effective UserGroups of a user",
+	Long: "Lists the user's effective UserGroups: the virtual \"All Users\" group plus every\n" +
+		"active managed membership. The user is identified by UUID, not by user ID.",
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := validateUUID(args[0], "user"); err != nil {
+			return err
+		}
+		ac, err := newABACClient(cmd)
+		if err != nil {
+			return err
+		}
+		result, err := ac.ListUserGroupsForUser(cmd.Context(), args[0])
+		if err != nil {
+			if abac.IsNotFound(err) {
+				return fmt.Errorf("user not found: %s", args[0])
+			}
+			return fmt.Errorf("listing user groups: %w", err)
+		}
+		if output.GetFormat() == output.FormatTable {
+			return renderUserGroupTable(result.UserGroups)
+		}
+		return output.Print(result)
+	},
+}
+
+var userEvaluateCmd = &cobra.Command{
+	Use:   "evaluate <user-uuid>",
+	Short: "Dry-run a policy decision for a user principal",
+	Long: "Asks the server what the evaluator would decide for the given action and the\n" +
+		"policy sets attached to the user's effective UserGroups. The base posture is\n" +
+		"default-deny and a deny from any group wins. Pass --graph to evaluate a\n" +
+		"specific standalone graph resource. The user is identified by UUID, not by\n" +
+		"user ID. Always exits 0 on a successful API call regardless of outcome.",
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := validateUUID(args[0], "user"); err != nil {
+			return err
+		}
+		return runEvaluate(cmd, abac.Principal{Type: abac.PrincipalUser, UUID: args[0]}, "user")
+	},
+}
+
+var userExplainCmd = &cobra.Command{
+	Use:   "explain <user-uuid>",
+	Short: "Dry-run a policy decision for a user principal and return the trace",
+	Long: "Like evaluate, but returns the full evaluator trace: effective UserGroups, the\n" +
+		"groups that contributed each policy set, matched and skipped policies, resource\n" +
+		"matches, and object constraints. Always exits 0 on a successful API call.",
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := validateUUID(args[0], "user"); err != nil {
+			return err
+		}
+		return runExplain(cmd, abac.Principal{Type: abac.PrincipalUser, UUID: args[0]}, "user")
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(userCmd)
 	userCmd.AddCommand(userListCmd)
@@ -350,6 +409,9 @@ func init() {
 	userCmd.AddCommand(userDeleteCmd)
 	userCmd.AddCommand(userThreadsCmd)
 	userCmd.AddCommand(userNodeCmd)
+	userCmd.AddCommand(userMembershipsCmd)
+	userCmd.AddCommand(userEvaluateCmd)
+	userCmd.AddCommand(userExplainCmd)
 
 	// List flags
 	userListCmd.Flags().Int("page", 1, "Page number")
@@ -378,4 +440,17 @@ func init() {
 	// Threads flags
 	userThreadsCmd.Flags().Int("page", 1, "Page number")
 	userThreadsCmd.Flags().Int("page-size", 50, "Results per page")
+
+	// ABAC dry-run flags
+	for _, cmd := range []*cobra.Command{userEvaluateCmd, userExplainCmd} {
+		cmd.Flags().String("action", "", "Action name to evaluate (e.g. graph.search)")
+		cmd.Flags().String("graph", "", "Standalone graph UUID to evaluate as the resource")
+		_ = cmd.MarkFlagRequired("action")
+	}
+
+	// The ABAC subcommands reach bearer-only endpoints; the rest of the
+	// group uses the SDK with an API key.
+	for _, cmd := range []*cobra.Command{userMembershipsCmd, userEvaluateCmd, userExplainCmd} {
+		client.SetCredentialType(cmd, client.CredentialBearer)
+	}
 }

@@ -130,6 +130,13 @@ return output.Print(data)  // JSON/YAML output
 
 ## User Input
 
+Read input through the helpers in `internal/cli/stdin.go` -- `readLine`,
+`confirmYesNo`, `confirmDeletion`, `readStdinAll` -- and never from `os.Stdin`
+directly. They read the package-level `stdinReader`, which tests replace with
+`stubStdin`. Reassigning `os.Stdin` in a test instead races with the goroutine
+that `auth login` leaves blocked on a stdin read, and the race detector then
+fails an unrelated test.
+
 ### Confirmation Prompts
 
 For destructive operations, require confirmation unless `--force` is provided:
@@ -137,22 +144,26 @@ For destructive operations, require confirmation unless `--force` is provided:
 ```go
 if !force {
     fmt.Printf("Delete %q? [y/N]: ", name)
-    reader := bufio.NewReader(os.Stdin)
-    response, _ := reader.ReadString('\n')
-    response = strings.TrimSpace(strings.ToLower(response))
-    if response != "y" && response != "yes" {
+    if !confirmYesNo() {
         output.Info("Aborted")
         return nil
     }
 }
 ```
 
+`confirmDeletion` does the same for a command whose non-interactive use must
+fail rather than silently abort: it honors `--force`, prompts on stderr, and
+returns an error telling the caller to pass `--force` when stdin is not a
+terminal.
+
 ### Secure Input
 
-For sensitive data like API keys, use `golang.org/x/term` for masked input:
+For sensitive data like API keys, use `golang.org/x/term` for masked input.
+`term.ReadPassword` needs the terminal's own descriptor, so it is the one place
+that reads `os.Stdin`:
 
 ```go
-if term.IsTerminal(int(os.Stdin.Fd())) {
+if stdinIsTerminal() {
     keyBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
     fmt.Println() // newline after hidden input
     // ...

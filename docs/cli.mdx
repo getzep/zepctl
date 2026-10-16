@@ -43,7 +43,7 @@ zepctl user list
 zepctl supports two authentication modes that coexist on the same profile:
 
 - **API key** (long-lived): pass via `ZEP_API_KEY` or store per-profile in the system keychain. Used for headless / CI scenarios.
-- **Bearer token** (OAuth / Kinde): obtained interactively via `zepctl auth login` and stored as a refresh token in the system keychain. Required for the ABAC management commands (`policy-set`, `api-key`) and the `config set-project` interactive flow.
+- **Bearer token** (OAuth / Kinde): obtained interactively via `zepctl auth login` and stored as a refresh token in the system keychain. Required for the ABAC management commands (`policy-set`, `api-key`, `user-group`, and `user groups|evaluate|explain`) and the `config set-project` interactive flow.
 
 Commands that require bearer auth use the bearer token even if an API key is also present.
 
@@ -196,7 +196,7 @@ zepctl auth status
 ```
 
 <Note>
-`auth login` auto-selects a project after authentication: if the account has exactly one project, it is selected automatically; otherwise the CLI prompts for a choice. ABAC management commands (`policy-set`, `api-key`) require a valid bearer token.
+`auth login` auto-selects a project after authentication: if the account has exactly one project, it is selected automatically; otherwise the CLI prompts for a choice. ABAC management commands (`policy-set`, `api-key`, `user-group`) require a valid bearer token.
 </Note>
 
 ### project
@@ -234,10 +234,21 @@ zepctl user threads <user-id>
 
 # Get user graph node
 zepctl user node <user-id>
+
+# List the user's effective UserGroups (bearer token; takes a user UUID)
+zepctl user groups <user-uuid>
+
+# Dry-run an ABAC decision for this user (bearer token; takes a user UUID)
+zepctl user evaluate <user-uuid> --action <name> [--graph <graph-uuid>]
+zepctl user explain  <user-uuid> --action <name> [--graph <graph-uuid>]
 ```
 
 <Note>
 Deleting a user removes all associated threads, graph data, and knowledge. This supports RTBF (Right to Be Forgotten) compliance.
+</Note>
+
+<Note>
+`groups`, `evaluate`, and `explain` take a user **UUID** and require a bearer token (`auth login`); every other `user` command takes the customer-supplied user ID and works with an API key. See [user-group](#user-group) for the group side of the same feature.
 </Note>
 
 ### thread
@@ -666,6 +677,70 @@ Both `evaluate` and `explain` always exit 0 on a successful API call regardless 
 zepctl api-key settings set abcd1234-... --mode report_only
 zepctl api-key policy-sets attach abcd1234-... efgh5678-...
 zepctl api-key evaluate abcd1234-... --action thread.get -o json
+```
+
+### user-group
+
+Manage UserGroups, their members, and the policy sets attached to them. All `user-group` commands require a bearer token.
+
+Every project has a virtual **All Users** group containing every active user. It accepts policy attachments -- that is how you grant something project-wide -- but it cannot be renamed, deleted, or given members. It is the first row of `user-group list`.
+
+```bash
+# List groups (All Users first), and get one group
+zepctl user-group list [--page N] [--page-size N] [--search TERM]
+zepctl user-group get <group-uuid>
+
+# Create, update, delete a managed group
+zepctl user-group create --name NAME [--description TEXT]
+zepctl user-group update <group-uuid> [--name NAME] [--description TEXT] [--expected-version N]
+zepctl user-group delete <group-uuid> [--force]
+
+# Membership (users are identified by UUID, not user ID)
+zepctl user-group members list <group-uuid>       [--page N] [--page-size N] [--search TERM]
+zepctl user-group members candidates <group-uuid> [--page N] [--page-size N] [--search TERM]
+zepctl user-group members add <group-uuid> <user-uuid>...
+zepctl user-group members remove <group-uuid> <user-uuid>...
+
+# Policy set attachments
+zepctl user-group policy-sets list <group-uuid>
+zepctl user-group policy-sets attach <group-uuid> <policy-set-uuid>
+zepctl user-group policy-sets detach <group-uuid> <policy-set-uuid>
+
+# Dry-run a policy decision for the group, optionally against one graph
+zepctl user-group evaluate <group-uuid> --action <name> [--graph <graph-uuid>]
+zepctl user-group explain  <group-uuid> --action <name> [--graph <graph-uuid>]
+```
+
+#### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--name` | (`create`, `update`) Group name; required on `create` |
+| `--description` | (`create`, `update`) Group description |
+| `--expected-version` | (`update`) Version the update must match; if the group version differs, the update conflicts. Without the flag, the command reads and sends the current version; a conflict occurs only if another update happens between the read and the write. |
+| `--search` | (`list`, `members list`, `members candidates`) Name search; user search for the member commands |
+| `--action` | (`evaluate`, `explain`) Required. Action name to evaluate (e.g. `graph.search`) |
+| `--graph` | (`evaluate`, `explain`) Standalone graph UUID to evaluate as the resource |
+
+`members candidates` lists active users who are not yet members, so you can find UUIDs to pass to `members add`. Adding a user who is already a member, or removing one who is not, is a successful no-op and is reported in the count.
+
+Group and user dry runs use a default-deny base: the outcome is `deny` unless an enforce-mode policy allows the action, and a deny from any of a user's groups wins. `explain` adds the effective groups, the groups that contributed each policy set, whether a match was graph-specific or action-wide, skipped policies, object constraints, and dead graph references.
+
+<Note>
+`--graph` takes a standalone graph's UUID, not its `graph_id`. Omit it to ask the action-only question. Like the `api-key` dry runs, `evaluate` and `explain` always exit 0 on a successful API call regardless of outcome.
+</Note>
+
+**Example**:
+```bash
+# Create a group, add a member, grant it a policy set, then check a decision
+zepctl user-group create --name Support --description "Support-facing users"
+zepctl user-group members candidates abcd1234-...
+zepctl user-group members add abcd1234-... 2b3c4d5e-...
+zepctl user-group policy-sets attach abcd1234-... efgh5678-...
+zepctl user-group explain abcd1234-... --action graph.search --graph 4d5e6f7a-...
+
+# Grant the same policy set to every user in the project
+zepctl user-group policy-sets attach <all-users-uuid> efgh5678-...
 ```
 
 ## Examples

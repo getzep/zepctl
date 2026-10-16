@@ -1,11 +1,8 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"fmt"
-	"os"
-	"strings"
 
 	"github.com/getzep/zep-go/v3"
 	"github.com/getzep/zep-go/v3/graph"
@@ -162,10 +159,7 @@ var episodeDeleteCmd = &cobra.Command{
 
 		if !force {
 			fmt.Printf("Delete episode %q? [y/N]: ", uuid)
-			reader := bufio.NewReader(os.Stdin)
-			response, _ := reader.ReadString('\n')
-			response = strings.TrimSpace(strings.ToLower(response))
-			if response != "y" && response != "yes" {
+			if !confirmYesNo() {
 				output.Info("Aborted")
 				return nil
 			}

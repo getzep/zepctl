@@ -1,14 +1,11 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
-	"strings"
 
 	"github.com/getzep/zepctl/internal/client"
 	"github.com/getzep/zepctl/internal/config"
@@ -77,9 +74,7 @@ you are prompted to choose.`,
 			}
 			fmt.Printf("Select a project [1-%d]: ", len(projects))
 
-			reader := bufio.NewReader(os.Stdin)
-			response, _ := reader.ReadString('\n')
-			response = strings.TrimSpace(response)
+			response := readLine()
 
 			idx, err := strconv.Atoi(response)
 			if err != nil || idx < 1 || idx > len(projects) {

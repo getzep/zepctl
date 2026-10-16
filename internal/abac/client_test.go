@@ -291,7 +291,9 @@ func TestClient_EvaluatePolicy(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	result, err := newTestClient(srv).EvaluatePolicy(context.Background(), "key-1", "thread.get")
+	result, err := newTestClient(srv).EvaluatePolicy(
+		context.Background(), Principal{Type: PrincipalAPIKey, UUID: "key-1"}, "thread.get", nil,
+	)
 	require.NoError(t, err)
 	assert.Equal(t, "allow", result.Outcome)
 	assert.Equal(t, "ALLOW", result.ABAC)
@@ -304,6 +306,83 @@ func TestClient_EvaluatePolicy(t *testing.T) {
 	assert.Contains(t, string(result.RawJSON), `"outcome":"allow"`)
 }
 
+// An API key principal keeps the original api_key_uuid field and never
+// sends a typed principal or a resource.
+func TestClient_EvaluatePolicy_APIKeyBodyShape(t *testing.T) {
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"outcome":"deny"}`))
+	}))
+	defer srv.Close()
+
+	_, err := newTestClient(srv).EvaluatePolicy(
+		context.Background(), Principal{Type: PrincipalAPIKey, UUID: "key-1"}, "thread.get", nil,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "key-1", gotBody["api_key_uuid"])
+	assert.NotContains(t, gotBody, "principal")
+	assert.NotContains(t, gotBody, "resource")
+}
+
+// User and user group principals use the typed principal field, and the
+// optional graph resource is sent when supplied.
+func TestClient_EvaluatePolicy_TypedPrincipalAndResource(t *testing.T) {
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"outcome": "allow", "abac": "ALLOW", "abac_shadow": "NEUTRAL",
+			"role_allows": false, "would_log_disagreement": false,
+			"base": "default_deny", "base_allows": false,
+			"principal": {"type": "user", "uuid": "user-1"},
+			"resource": {"type": "graph", "uuid": "graph-1"}
+		}`))
+	}))
+	defer srv.Close()
+
+	result, err := newTestClient(srv).EvaluatePolicy(
+		context.Background(),
+		Principal{Type: PrincipalUser, UUID: "user-1"},
+		"graph.search",
+		&Resource{Type: ResourceGraph, UUID: "graph-1"},
+	)
+	require.NoError(t, err)
+	assert.NotContains(t, gotBody, "api_key_uuid")
+	assert.Equal(t, map[string]any{"type": "user", "uuid": "user-1"}, gotBody["principal"])
+	assert.Equal(t, map[string]any{"type": "graph", "uuid": "graph-1"}, gotBody["resource"])
+	require.NotNil(t, result.Principal)
+	assert.Equal(t, PrincipalUser, result.Principal.Type)
+	require.NotNil(t, result.Resource)
+	assert.Equal(t, "graph-1", result.Resource.UUID)
+	assert.Equal(t, "default_deny", result.Base)
+	require.NotNil(t, result.BaseAllows)
+	assert.False(t, *result.BaseAllows)
+}
+
+// A user group principal omits the resource when none is requested.
+func TestClient_EvaluatePolicy_UserGroupPrincipalWithoutResource(t *testing.T) {
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"outcome":"deny"}`))
+	}))
+	defer srv.Close()
+
+	_, err := newTestClient(srv).EvaluatePolicy(
+		context.Background(), Principal{Type: PrincipalUserGroup, UUID: "group-1"}, "graph.search", nil,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{"type": "user_group", "uuid": "group-1"}, gotBody["principal"])
+	assert.NotContains(t, gotBody, "resource")
+}
+
 // EvaluatePolicy preserves server-added fields the typed shape doesn't
 // model, for forward compatibility.
 func TestClient_EvaluatePolicy_PreservesUnknownFields(t *testing.T) {
@@ -313,7 +392,9 @@ func TestClient_EvaluatePolicy_PreservesUnknownFields(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	result, err := newTestClient(srv).EvaluatePolicy(context.Background(), "key-1", "thread.delete")
+	result, err := newTestClient(srv).EvaluatePolicy(
+		context.Background(), Principal{Type: PrincipalAPIKey, UUID: "key-1"}, "thread.delete", nil,
+	)
 	require.NoError(t, err)
 	assert.Equal(t, "deny", result.Outcome)
 	assert.Contains(t, string(result.RawJSON), `"future_field":"surprise"`)
@@ -344,7 +425,9 @@ func TestClient_ExplainPolicy(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	result, err := newTestClient(srv).ExplainPolicy(context.Background(), "key-1", "thread.get")
+	result, err := newTestClient(srv).ExplainPolicy(
+		context.Background(), Principal{Type: PrincipalAPIKey, UUID: "key-1"}, "thread.get", nil,
+	)
 	require.NoError(t, err)
 	assert.Equal(t, "ALLOW", result.ABAC)
 	assert.Equal(t, "thread.get", result.Trace.Action)
@@ -358,6 +441,403 @@ func TestClient_ExplainPolicy(t *testing.T) {
 	// retained in RawJSON.
 	assert.Contains(t, string(result.RawJSON), `"role_base_covers_action": false`)
 }
+
+// A resource-aware explain carries effective groups, contributing
+// groups, resource matches, skipped policies, object constraints, and
+// dead graph references.
+func TestClient_ExplainPolicy_ResourceAware(t *testing.T) {
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v2/abac/policies/explain", r.URL.Path)
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"outcome": "allow",
+			"abac": "ALLOW",
+			"abac_shadow": "NEUTRAL",
+			"role_allows": false,
+			"would_log_disagreement": false,
+			"base": "default_deny",
+			"base_allows": false,
+			"principal": {"type": "user", "uuid": "user-1"},
+			"resource": {"type": "graph", "uuid": "graph-1"},
+			"trace": {
+				"action": "graph.search",
+				"registry_entry": {"read_only": true},
+				"resolved_group_uuids": ["group-all", "group-support"],
+				"evaluated_sets": [
+					{"uuid": "set-1", "name": "support_read", "set_mode": "enforce",
+					 "contributing_group_uuids": ["group-support"],
+					 "matched": [{"policy_id": "read_graph", "effect": "allow",
+					   "matched_via": "literal", "resource_match": "explicit"}],
+					 "skipped": [{"policy_id": "other_graph", "effect": "allow",
+					   "resource_match": "resource_mismatch"}]}
+				],
+				"skipped_sets": [],
+				"object_constraints": {
+					"include": [{"attributes": {"source": ["email"]}, "subset_match": true}],
+					"exclude": []
+				},
+				"dead_graph_uuids": ["graph-gone"]
+			}
+		}`))
+	}))
+	defer srv.Close()
+
+	result, err := newTestClient(srv).ExplainPolicy(
+		context.Background(),
+		Principal{Type: PrincipalUser, UUID: "user-1"},
+		"graph.search",
+		&Resource{Type: ResourceGraph, UUID: "graph-1"},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{"type": "graph", "uuid": "graph-1"}, gotBody["resource"])
+	assert.Equal(t, "default_deny", result.Base)
+	assert.Equal(t, []string{"group-all", "group-support"}, result.Trace.ResolvedGroupUUIDs)
+	require.Len(t, result.Trace.EvaluatedSets, 1)
+	set := result.Trace.EvaluatedSets[0]
+	assert.Equal(t, []string{"group-support"}, set.ContributingGroupUUIDs)
+	require.Len(t, set.Matched, 1)
+	assert.Equal(t, "explicit", set.Matched[0].ResourceMatch)
+	require.Len(t, set.Skipped, 1)
+	assert.Equal(t, "resource_mismatch", set.Skipped[0].ResourceMatch)
+	require.NotNil(t, result.Trace.ObjectConstraints)
+	require.Len(t, result.Trace.ObjectConstraints.Include, 1)
+	assert.True(t, result.Trace.ObjectConstraints.Include[0].SubsetMatch)
+	assert.Equal(t, []string{"graph-gone"}, result.Trace.DeadGraphUUIDs)
+}
+
+// --- User Groups ---
+
+func TestClient_ListUserGroups(t *testing.T) {
+	var gotReq *http.Request
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotReq = r
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(UserGroupList{
+			UserGroups: []UserGroup{
+				{UUID: "group-all", Name: "All Users", Kind: "virtual", MemberCount: 12},
+				{UUID: "group-1", Name: "Support", Kind: "managed", MemberCount: 3, Version: intPtr(2)},
+			},
+			TotalCount: 2,
+			RowCount:   2,
+			Quota:      UserGroupQuota{ActiveManaged: 1, Allocation: 10, HasFeature: true, Resolved: true},
+		})
+	}))
+	defer srv.Close()
+
+	result, err := newTestClient(srv).ListUserGroups(context.Background(), 2, 25, "sup")
+	require.NoError(t, err)
+	require.Len(t, result.UserGroups, 2)
+	assert.Equal(t, "virtual", result.UserGroups[0].Kind)
+	assert.Nil(t, result.UserGroups[0].Version)
+	assert.Equal(t, 2, *result.UserGroups[1].Version)
+	assert.Equal(t, 10, result.Quota.Allocation)
+	assert.Equal(t, http.MethodGet, gotReq.Method)
+	assert.Equal(t, "/api/v2/user-groups", gotReq.URL.Path)
+	assert.Equal(t, "2", gotReq.URL.Query().Get("pageNumber"))
+	assert.Equal(t, "25", gotReq.URL.Query().Get("pageSize"))
+	assert.Equal(t, "sup", gotReq.URL.Query().Get("search"))
+	assert.Equal(t, "test-project-uuid", gotReq.Header.Get("X-Zep-Project"))
+}
+
+// The API requires pageSize, so it is always sent; search is omitted
+// when empty.
+func TestClient_ListUserGroups_OmitsEmptySearch(t *testing.T) {
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(UserGroupList{})
+	}))
+	defer srv.Close()
+
+	_, err := newTestClient(srv).ListUserGroups(context.Background(), 1, 50, "")
+	require.NoError(t, err)
+	assert.Equal(t, "pageNumber=1&pageSize=50", gotQuery)
+}
+
+func TestClient_GetUserGroup(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v2/user-groups/group-1", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(UserGroup{
+			UUID: "group-1", Name: "Support", Kind: "managed",
+			MemberCount: 3, AttachedPolicyCount: 1, Version: intPtr(2),
+		})
+	}))
+	defer srv.Close()
+
+	result, err := newTestClient(srv).GetUserGroup(context.Background(), "group-1")
+	require.NoError(t, err)
+	assert.Equal(t, "Support", result.Name)
+	assert.Equal(t, 1, result.AttachedPolicyCount)
+}
+
+func TestClient_CreateUserGroup(t *testing.T) {
+	var gotBody map[string]string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/api/v2/user-groups", r.URL.Path)
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(UserGroup{UUID: "group-new", Name: "Support", Version: intPtr(1)})
+	}))
+	defer srv.Close()
+
+	result, err := newTestClient(srv).CreateUserGroup(context.Background(), "Support", "Support staff")
+	require.NoError(t, err)
+	assert.Equal(t, "group-new", result.UUID)
+	assert.Equal(t, "Support", gotBody["name"])
+	assert.Equal(t, "Support staff", gotBody["description"])
+}
+
+func TestClient_CreateUserGroup_OmitsEmptyDescription(t *testing.T) {
+	var gotBody map[string]string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(UserGroup{UUID: "group-new", Name: "Support"})
+	}))
+	defer srv.Close()
+
+	_, err := newTestClient(srv).CreateUserGroup(context.Background(), "Support", "")
+	require.NoError(t, err)
+	assert.NotContains(t, gotBody, "description")
+}
+
+func TestClient_UpdateUserGroup(t *testing.T) {
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPatch, r.Method)
+		assert.Equal(t, "/api/v2/user-groups/group-1", r.URL.Path)
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(UserGroup{UUID: "group-1", Name: "Renamed", Version: intPtr(3)})
+	}))
+	defer srv.Close()
+
+	name := "Renamed"
+	result, err := newTestClient(srv).UpdateUserGroup(context.Background(), "group-1", &name, nil, 2)
+	require.NoError(t, err)
+	assert.Equal(t, 3, *result.Version)
+	assert.Equal(t, "Renamed", gotBody["name"])
+	assert.NotContains(t, gotBody, "description")
+	assert.Equal(t, float64(2), gotBody["expected_version"])
+}
+
+func TestClient_DeleteUserGroup(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodDelete, r.Method)
+		assert.Equal(t, "/api/v2/user-groups/group-1", r.URL.Path)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	require.NoError(t, newTestClient(srv).DeleteUserGroup(context.Background(), "group-1"))
+}
+
+func TestClient_ListUserGroupMembers(t *testing.T) {
+	var gotReq *http.Request
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotReq = r
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(GroupMembers{
+			Users: []GroupMember{
+				{UUID: "user-1", UserID: "alice", Email: "alice@example.com", FirstName: "Alice"},
+			},
+			TotalCount: 1, RowCount: 1,
+		})
+	}))
+	defer srv.Close()
+
+	result, err := newTestClient(srv).ListUserGroupMembers(context.Background(), "group-1", 1, 50, "alice")
+	require.NoError(t, err)
+	require.Len(t, result.Users, 1)
+	assert.Equal(t, "alice", result.Users[0].UserID)
+	assert.Equal(t, "/api/v2/user-groups/group-1/members", gotReq.URL.Path)
+	assert.Equal(t, "alice", gotReq.URL.Query().Get("search"))
+}
+
+func TestClient_ListUserGroupMemberCandidates(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(GroupMembers{})
+	}))
+	defer srv.Close()
+
+	_, err := newTestClient(srv).ListUserGroupMemberCandidates(context.Background(), "group-1", 1, 50, "")
+	require.NoError(t, err)
+	assert.Equal(t, "/api/v2/user-groups/group-1/members/candidates", gotPath)
+}
+
+// Candidates on the virtual All Users group is a conflict, like every
+// membership mutation on it.
+func TestClient_ListUserGroupMemberCandidates_VirtualConflict(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": "the All Users group is immutable"})
+	}))
+	defer srv.Close()
+
+	_, err := newTestClient(srv).ListUserGroupMemberCandidates(context.Background(), "group-all", 1, 50, "")
+	require.Error(t, err)
+	assert.True(t, IsConflict(err))
+}
+
+func TestClient_AddUserGroupMembers(t *testing.T) {
+	var gotBody map[string][]string
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		gotPath = r.URL.Path
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(MembershipResult{Added: 2, NoOp: 1})
+	}))
+	defer srv.Close()
+
+	result, err := newTestClient(srv).AddUserGroupMembers(
+		context.Background(), "group-1", []string{"user-1", "user-2", "user-3"},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, 2, result.Added)
+	assert.Equal(t, 1, result.NoOp)
+	assert.Equal(t, "/api/v2/user-groups/group-1/members", gotPath)
+	assert.Equal(t, []string{"user-1", "user-2", "user-3"}, gotBody["user_uuids"])
+}
+
+// Removal always uses the bulk endpoint, including for a single user.
+func TestClient_RemoveUserGroupMembers(t *testing.T) {
+	var gotBody map[string][]string
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		gotPath = r.URL.Path
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(MembershipResult{Removed: 1})
+	}))
+	defer srv.Close()
+
+	result, err := newTestClient(srv).RemoveUserGroupMembers(context.Background(), "group-1", []string{"user-1"})
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.Removed)
+	assert.Equal(t, "/api/v2/user-groups/group-1/members/bulk-remove", gotPath)
+	assert.Equal(t, []string{"user-1"}, gotBody["user_uuids"])
+}
+
+func TestClient_ListUserGroupsForUser(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(UserGroupsForUser{
+			UserGroups: []UserGroup{
+				{UUID: "group-all", Name: "All Users", Kind: "virtual"},
+				{UUID: "group-1", Name: "Support", Kind: "managed", Version: intPtr(1)},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	result, err := newTestClient(srv).ListUserGroupsForUser(context.Background(), "user-1")
+	require.NoError(t, err)
+	assert.Len(t, result.UserGroups, 2)
+	assert.Equal(t, "/api/v2/user-groups/users/user-1", gotPath)
+}
+
+// --- User Group Policy Attachments ---
+
+func TestClient_ListUserGroupPolicySets(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/api/v2/abac/user-groups/group-1/policy-sets", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(AttachedPolicySets{
+			PolicySets: []PolicySetSummary{{UUID: "ps-1", Name: "support_read", Mode: "enforce", Version: 1}},
+		})
+	}))
+	defer srv.Close()
+
+	result, err := newTestClient(srv).ListUserGroupPolicySets(context.Background(), "group-1")
+	require.NoError(t, err)
+	require.Len(t, result.PolicySets, 1)
+	assert.Equal(t, "support_read", result.PolicySets[0].Name)
+}
+
+func TestClient_AttachUserGroupPolicySet(t *testing.T) {
+	var gotBody map[string]string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/api/v2/abac/user-groups/group-1/policy-sets", r.URL.Path)
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(AttachedPolicySets{
+			PolicySets: []PolicySetSummary{{UUID: "ps-1", Name: "support_read", Mode: "enforce", Version: 1}},
+		})
+	}))
+	defer srv.Close()
+
+	result, err := newTestClient(srv).AttachUserGroupPolicySet(context.Background(), "group-1", "ps-1")
+	require.NoError(t, err)
+	assert.Len(t, result.PolicySets, 1)
+	assert.Equal(t, "ps-1", gotBody["policy_set_uuid"])
+}
+
+func TestClient_DetachUserGroupPolicySet(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodDelete, r.Method)
+		assert.Equal(t, "/api/v2/abac/user-groups/group-1/policy-sets/ps-1", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(AttachedPolicySets{PolicySets: []PolicySetSummary{}})
+	}))
+	defer srv.Close()
+
+	result, err := newTestClient(srv).DetachUserGroupPolicySet(context.Background(), "group-1", "ps-1")
+	require.NoError(t, err)
+	assert.Empty(t, result.PolicySets)
+}
+
+// A retention policy set cannot attach to a user group.
+func TestClient_AttachUserGroupPolicySet_BadRequest(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": "retention policy sets cannot attach to a user group"})
+	}))
+	defer srv.Close()
+
+	_, err := newTestClient(srv).AttachUserGroupPolicySet(context.Background(), "group-1", "ps-1")
+	require.Error(t, err)
+	var apiErr *APIError
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
+	assert.Contains(t, apiErr.Message, "retention policy sets")
+}
+
+func TestClient_GetUserGroup_NotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": "user group not found"})
+	}))
+	defer srv.Close()
+
+	_, err := newTestClient(srv).GetUserGroup(context.Background(), "missing")
+	require.Error(t, err)
+	assert.True(t, IsNotFound(err))
+}
+
+func intPtr(value int) *int { return &value }
 
 // --- Error Handling ---
 

@@ -71,18 +71,51 @@ type ProjectKeysResponse struct {
 	Keys []ProjectKey `json:"keys"`
 }
 
+// Principal types accepted by the evaluate and explain endpoints.
+const (
+	PrincipalAPIKey    = "api_key"
+	PrincipalUserGroup = "user_group"
+	PrincipalUser      = "user"
+)
+
+// ResourceGraph is the only resource type accepted by resource-aware
+// dry runs.
+const ResourceGraph = "graph"
+
+// Principal identifies the subject of a dry-run evaluation.
+type Principal struct {
+	Type string `json:"type"`
+	UUID string `json:"uuid"`
+}
+
+// Resource identifies the object of a resource-aware dry-run evaluation.
+// The UUID is a standalone graph subject's canonical UUID, never a
+// customer-selected graph ID.
+type Resource struct {
+	Type string `json:"type"`
+	UUID string `json:"uuid"`
+}
+
 // EvaluateResponse is the response from POST /api/v2/abac/policies/evaluate.
 //
 // RawJSON is the unmodified server response body. Table output uses the
 // typed fields; JSON/YAML output prints RawJSON verbatim so any
 // server-added fields are surfaced without a CLI release. Set by the
 // client method, not by the JSON decoder.
+//
+// Principal, Resource, Base, and BaseAllows are absent for API key
+// principals and populated for user and user group principals, whose
+// base posture is default-deny.
 type EvaluateResponse struct {
 	Outcome              string          `json:"outcome"`
 	ABAC                 string          `json:"abac"`
 	ABACShadow           string          `json:"abac_shadow"`
 	RoleAllows           bool            `json:"role_allows"`
 	WouldLogDisagreement bool            `json:"would_log_disagreement"`
+	Principal            *Principal      `json:"principal,omitempty"`
+	Resource             *Resource       `json:"resource,omitempty"`
+	Base                 string          `json:"base,omitempty"`
+	BaseAllows           *bool           `json:"base_allows,omitempty"`
 	RawJSON              json.RawMessage `json:"-"`
 }
 
@@ -97,6 +130,10 @@ type ExplainResponse struct {
 	ABACShadow           string          `json:"abac_shadow"`
 	RoleAllows           bool            `json:"role_allows"`
 	WouldLogDisagreement bool            `json:"would_log_disagreement"`
+	Principal            *Principal      `json:"principal,omitempty"`
+	Resource             *Resource       `json:"resource,omitempty"`
+	Base                 string          `json:"base,omitempty"`
+	BaseAllows           *bool           `json:"base_allows,omitempty"`
 	Trace                ExplainTrace    `json:"trace"`
 	RawJSON              json.RawMessage `json:"-"`
 }
@@ -107,10 +144,15 @@ type ExplainResponse struct {
 // already exposed at the top level as RoleAllows. The raw field is
 // preserved in ExplainResponse.RawJSON for JSON callers.
 type ExplainTrace struct {
-	Action        string                `json:"action"`
-	RegistryEntry ExplainRegistryEntry  `json:"registry_entry"`
-	EvaluatedSets []ExplainEvaluatedSet `json:"evaluated_sets"`
-	SkippedSets   []ExplainSkippedSet   `json:"skipped_sets"`
+	Action             string                    `json:"action"`
+	RegistryEntry      ExplainRegistryEntry      `json:"registry_entry"`
+	EvaluatedSets      []ExplainEvaluatedSet     `json:"evaluated_sets"`
+	SkippedSets        []ExplainSkippedSet       `json:"skipped_sets"`
+	Principal          *Principal                `json:"principal,omitempty"`
+	Resource           *Resource                 `json:"resource,omitempty"`
+	ResolvedGroupUUIDs []string                  `json:"resolved_group_uuids,omitempty"`
+	ObjectConstraints  *ExplainObjectConstraints `json:"object_constraints,omitempty"`
+	DeadGraphUUIDs     []string                  `json:"dead_graph_uuids,omitempty"`
 }
 
 type ExplainRegistryEntry struct {
@@ -118,22 +160,114 @@ type ExplainRegistryEntry struct {
 }
 
 type ExplainEvaluatedSet struct {
-	UUID    string           `json:"uuid"`
-	Name    string           `json:"name"`
-	SetMode string           `json:"set_mode"`
-	Matched []ExplainMatched `json:"matched"`
+	UUID                   string                 `json:"uuid"`
+	Name                   string                 `json:"name"`
+	SetMode                string                 `json:"set_mode"`
+	Matched                []ExplainMatched       `json:"matched"`
+	Skipped                []ExplainSkippedPolicy `json:"skipped,omitempty"`
+	ContributingGroupUUIDs []string               `json:"contributing_group_uuids,omitempty"`
 }
 
 type ExplainMatched struct {
 	PolicyID   string `json:"policy_id"`
 	Effect     string `json:"effect"`
 	MatchedVia string `json:"matched_via"`
+	// ResourceMatch is "explicit" when the policy named the resolved
+	// graph UUID and "action_wide" when it carried no selector. It is
+	// empty for action-only dry runs.
+	ResourceMatch string `json:"resource_match,omitempty"`
+}
+
+// ExplainSkippedPolicy is a policy that did not contribute because its
+// action, resource, or set mode did not match.
+type ExplainSkippedPolicy struct {
+	PolicyID      string `json:"policy_id"`
+	Effect        string `json:"effect"`
+	ResourceMatch string `json:"resource_match"`
 }
 
 type ExplainSkippedSet struct {
 	UUID   string `json:"uuid"`
 	Name   string `json:"name"`
 	Reason string `json:"reason"`
+}
+
+// ExplainObjectConstraints is the include/exclude object filter resolved
+// for a resource-aware dry run.
+type ExplainObjectConstraints struct {
+	Include []ExplainConstraintGroup `json:"include"`
+	Exclude []ExplainConstraintGroup `json:"exclude"`
+}
+
+type ExplainConstraintGroup struct {
+	Attributes  map[string][]any `json:"attributes"`
+	SubsetMatch bool             `json:"subset_match"`
+}
+
+// UserGroup is a project-scoped UserGroup. Kind is "managed" or
+// "virtual"; the virtual All Users group has a null version and null
+// timestamps.
+type UserGroup struct {
+	UUID                string  `json:"uuid"`
+	ProjectUUID         string  `json:"project_uuid"`
+	Name                string  `json:"name"`
+	Description         string  `json:"description,omitempty"`
+	Kind                string  `json:"kind"`
+	MemberCount         int     `json:"member_count"`
+	AttachedPolicyCount int     `json:"attached_policy_set_count"`
+	Version             *int    `json:"version"`
+	CreatedAt           *string `json:"created_at"`
+	UpdatedAt           *string `json:"updated_at"`
+}
+
+// UserGroupQuota is the managed-group allocation state returned with
+// list responses so callers do not infer plan limits themselves.
+type UserGroupQuota struct {
+	ActiveManaged int  `json:"active_managed"`
+	Allocation    int  `json:"allocation"`
+	HasFeature    bool `json:"has_feature"`
+	Unlimited     bool `json:"unlimited"`
+	Resolved      bool `json:"resolved"`
+}
+
+// UserGroupList is the response for GET /api/v2/user-groups.
+type UserGroupList struct {
+	UserGroups []UserGroup    `json:"user_groups"`
+	TotalCount int            `json:"total_count"`
+	RowCount   int            `json:"row_count"`
+	Quota      UserGroupQuota `json:"quota"`
+}
+
+// UserGroupsForUser is the response for
+// GET /api/v2/user-groups/users/{user_uuid}: All Users plus every active
+// managed membership.
+type UserGroupsForUser struct {
+	UserGroups []UserGroup `json:"user_groups"`
+}
+
+// GroupMember is a User in a member or candidate list. It carries only
+// the identity fields the CLI renders.
+type GroupMember struct {
+	UUID      string `json:"uuid"`
+	UserID    string `json:"user_id"`
+	Email     string `json:"email,omitempty"`
+	FirstName string `json:"first_name,omitempty"`
+	LastName  string `json:"last_name,omitempty"`
+}
+
+// GroupMembers is the response for the member and candidate endpoints.
+type GroupMembers struct {
+	Users      []GroupMember `json:"users"`
+	TotalCount int           `json:"total_count"`
+	RowCount   int           `json:"row_count"`
+}
+
+// MembershipResult is the response for membership mutations. Duplicate
+// adds and removals of an absent membership are counted as no-ops.
+type MembershipResult struct {
+	Added   int `json:"added_count,omitempty"`
+	Removed int `json:"removed_count,omitempty"`
+	NoOp    int `json:"no_op_count"`
 }
 
 // APIError is returned when the ABAC API returns a non-2xx response.

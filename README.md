@@ -38,7 +38,7 @@ zepctl user list
 zepctl supports two authentication modes (which coexist on the same profile):
 
 - **API key** -- long-lived, set via `ZEP_API_KEY` or stored per-profile in the system keychain. Used for headless / CI scenarios.
-- **Bearer token** -- obtained interactively via `zepctl auth login` (OAuth / Kinde) and stored as a refresh token in the system keychain. Required for ABAC management (`policy-set`, `api-key`) and the interactive `config set-project` flow.
+- **Bearer token** -- obtained interactively via `zepctl auth login` (OAuth / Kinde) and stored as a refresh token in the system keychain. Required for ABAC management (`policy-set`, `api-key`, `user-group`, and `user groups|evaluate|explain`) and the interactive `config set-project` flow.
 
 ```bash
 # Browser-based login; auto-selects a project after authentication
@@ -67,7 +67,7 @@ Configuration file location: `~/.zepctl/config.yaml`. API keys and OAuth refresh
 | `config` | Manage profiles, environment presets, and the active project |
 | `auth` | Bearer-token login / logout / status |
 | `project` | Get project information |
-| `user` | Manage users |
+| `user` | Manage users; inspect their UserGroups and dry-run ABAC decisions (bearer auth for those three) |
 | `thread` | Manage conversation threads |
 | `graph` | Manage knowledge graphs |
 | `node` | Manage graph nodes |
@@ -80,6 +80,7 @@ Configuration file location: `~/.zepctl/config.yaml`. API keys and OAuth refresh
 | `summary-instructions` | Manage user summary instructions |
 | `policy-set` | Manage ABAC policy sets (bearer auth) |
 | `api-key` | List API keys, configure ABAC, and dry-run policy decisions (bearer auth) |
+| `user-group` | Manage UserGroups, membership, and their ABAC policy attachments (bearer auth) |
 
 ## Global Flags
 

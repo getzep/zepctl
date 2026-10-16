@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -144,13 +146,163 @@ func (c *Client) DetachPolicySet(ctx context.Context, keyUUID, policySetUUID str
 	return &result, nil
 }
 
+// --- User Groups ---
+
+func (c *Client) ListUserGroups(ctx context.Context, page, pageSize int, search string) (*UserGroupList, error) {
+	var result UserGroupList
+	path := "/api/v2/user-groups?" + paginationQuery(page, pageSize, search)
+	if err := c.doRequest(ctx, http.MethodGet, path, nil, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *Client) GetUserGroup(ctx context.Context, groupUUID string) (*UserGroup, error) {
+	var result UserGroup
+	if err := c.doRequest(ctx, http.MethodGet, userGroupPath(groupUUID), nil, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *Client) CreateUserGroup(ctx context.Context, name, description string) (*UserGroup, error) {
+	body := map[string]string{"name": name}
+	if description != "" {
+		body["description"] = description
+	}
+	var result UserGroup
+	if err := c.doRequest(ctx, http.MethodPost, "/api/v2/user-groups", body, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// UpdateUserGroup patches a managed group's metadata. expectedVersion is
+// the optimistic-concurrency token; a stale value returns 409.
+func (c *Client) UpdateUserGroup(
+	ctx context.Context, groupUUID string, name, description *string, expectedVersion int,
+) (*UserGroup, error) {
+	body := struct {
+		Name            *string `json:"name,omitempty"`
+		Description     *string `json:"description,omitempty"`
+		ExpectedVersion int     `json:"expected_version"`
+	}{Name: name, Description: description, ExpectedVersion: expectedVersion}
+	var result UserGroup
+	if err := c.doRequest(ctx, http.MethodPatch, userGroupPath(groupUUID), body, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *Client) DeleteUserGroup(ctx context.Context, groupUUID string) error {
+	return c.doRequest(ctx, http.MethodDelete, userGroupPath(groupUUID), nil, nil)
+}
+
+func (c *Client) ListUserGroupMembers(
+	ctx context.Context, groupUUID string, page, pageSize int, search string,
+) (*GroupMembers, error) {
+	return c.listGroupUsers(ctx, userGroupPath(groupUUID)+"/members", page, pageSize, search)
+}
+
+// ListUserGroupMemberCandidates lists active Users that are not already
+// members of the group. It returns 409 for the virtual All Users group,
+// whose membership cannot be mutated.
+func (c *Client) ListUserGroupMemberCandidates(
+	ctx context.Context, groupUUID string, page, pageSize int, search string,
+) (*GroupMembers, error) {
+	return c.listGroupUsers(ctx, userGroupPath(groupUUID)+"/members/candidates", page, pageSize, search)
+}
+
+func (c *Client) listGroupUsers(
+	ctx context.Context, basePath string, page, pageSize int, search string,
+) (*GroupMembers, error) {
+	var result GroupMembers
+	path := basePath + "?" + paginationQuery(page, pageSize, search)
+	if err := c.doRequest(ctx, http.MethodGet, path, nil, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *Client) AddUserGroupMembers(
+	ctx context.Context, groupUUID string, userUUIDs []string,
+) (*MembershipResult, error) {
+	return c.mutateUserGroupMembers(ctx, userGroupPath(groupUUID)+"/members", userUUIDs)
+}
+
+// RemoveUserGroupMembers removes one or more memberships through the
+// bulk endpoint, which is idempotent for absent memberships.
+func (c *Client) RemoveUserGroupMembers(
+	ctx context.Context, groupUUID string, userUUIDs []string,
+) (*MembershipResult, error) {
+	return c.mutateUserGroupMembers(ctx, userGroupPath(groupUUID)+"/members/bulk-remove", userUUIDs)
+}
+
+func (c *Client) mutateUserGroupMembers(
+	ctx context.Context, path string, userUUIDs []string,
+) (*MembershipResult, error) {
+	body := map[string][]string{"user_uuids": userUUIDs}
+	var result MembershipResult
+	if err := c.doRequest(ctx, http.MethodPost, path, body, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// ListUserGroupsForUser returns the User's effective groups: All Users
+// plus every active managed membership.
+func (c *Client) ListUserGroupsForUser(ctx context.Context, userUUID string) (*UserGroupsForUser, error) {
+	var result UserGroupsForUser
+	path := "/api/v2/user-groups/users/" + url.PathEscape(userUUID)
+	if err := c.doRequest(ctx, http.MethodGet, path, nil, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// --- User Group Policy Attachments ---
+
+func (c *Client) ListUserGroupPolicySets(ctx context.Context, groupUUID string) (*AttachedPolicySets, error) {
+	var result AttachedPolicySets
+	if err := c.doRequest(ctx, http.MethodGet, userGroupPolicySetsPath(groupUUID), nil, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *Client) AttachUserGroupPolicySet(
+	ctx context.Context, groupUUID, policySetUUID string,
+) (*AttachedPolicySets, error) {
+	body := map[string]string{"policy_set_uuid": policySetUUID}
+	var result AttachedPolicySets
+	if err := c.doRequest(ctx, http.MethodPost, userGroupPolicySetsPath(groupUUID), body, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *Client) DetachUserGroupPolicySet(
+	ctx context.Context, groupUUID, policySetUUID string,
+) (*AttachedPolicySets, error) {
+	var result AttachedPolicySets
+	path := userGroupPolicySetsPath(groupUUID) + "/" + url.PathEscape(policySetUUID)
+	if err := c.doRequest(ctx, http.MethodDelete, path, nil, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 // --- Policy Evaluation (Dry-Run) ---
 
 // EvaluatePolicy posts to /api/v2/abac/policies/evaluate and returns the
-// concise decision plus the unmodified server body in RawJSON.
-func (c *Client) EvaluatePolicy(ctx context.Context, keyUUID, action string) (*EvaluateResponse, error) {
-	body := map[string]string{"api_key_uuid": keyUUID, "action": action}
-	raw, err := c.doRequestRaw(ctx, http.MethodPost, "/api/v2/abac/policies/evaluate", body)
+// concise decision plus the unmodified server body in RawJSON. resource
+// is optional and rejected for API key principals.
+func (c *Client) EvaluatePolicy(
+	ctx context.Context, principal Principal, action string, resource *Resource,
+) (*EvaluateResponse, error) {
+	raw, err := c.doRequestRaw(
+		ctx, http.MethodPost, "/api/v2/abac/policies/evaluate", dryRunBody(principal, action, resource),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -165,9 +317,12 @@ func (c *Client) EvaluatePolicy(ctx context.Context, keyUUID, action string) (*E
 // ExplainPolicy posts to /api/v2/abac/policies/explain and returns the
 // decision plus a structured trace. RawJSON preserves any
 // trace fields the typed shape does not yet render.
-func (c *Client) ExplainPolicy(ctx context.Context, keyUUID, action string) (*ExplainResponse, error) {
-	body := map[string]string{"api_key_uuid": keyUUID, "action": action}
-	raw, err := c.doRequestRaw(ctx, http.MethodPost, "/api/v2/abac/policies/explain", body)
+func (c *Client) ExplainPolicy(
+	ctx context.Context, principal Principal, action string, resource *Resource,
+) (*ExplainResponse, error) {
+	raw, err := c.doRequestRaw(
+		ctx, http.MethodPost, "/api/v2/abac/policies/explain", dryRunBody(principal, action, resource),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -177,6 +332,44 @@ func (c *Client) ExplainPolicy(ctx context.Context, keyUUID, action string) (*Ex
 	}
 	result.RawJSON = raw
 	return &result, nil
+}
+
+// dryRunBody builds the evaluate/explain request body. API key
+// principals keep the original api_key_uuid field; the typed principal
+// field carries user and user group principals.
+func dryRunBody(principal Principal, action string, resource *Resource) any {
+	body := struct {
+		Action     string     `json:"action"`
+		APIKeyUUID string     `json:"api_key_uuid,omitempty"`
+		Principal  *Principal `json:"principal,omitempty"`
+		Resource   *Resource  `json:"resource,omitempty"`
+	}{Action: action, Resource: resource}
+	if principal.Type == PrincipalAPIKey {
+		body.APIKeyUUID = principal.UUID
+		return body
+	}
+	body.Principal = &principal
+	return body
+}
+
+func userGroupPath(groupUUID string) string {
+	return "/api/v2/user-groups/" + url.PathEscape(groupUUID)
+}
+
+func userGroupPolicySetsPath(groupUUID string) string {
+	return "/api/v2/abac/user-groups/" + url.PathEscape(groupUUID) + "/policy-sets"
+}
+
+// paginationQuery builds the query string for the paginated UserGroup
+// endpoints. pageSize is always sent because the API requires it.
+func paginationQuery(page, pageSize int, search string) string {
+	query := url.Values{}
+	query.Set("pageNumber", strconv.Itoa(page))
+	query.Set("pageSize", strconv.Itoa(pageSize))
+	if search != "" {
+		query.Set("search", search)
+	}
+	return query.Encode()
 }
 
 // --- Internal ---
