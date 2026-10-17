@@ -81,7 +81,7 @@ var edgeListCmd = &cobra.Command{
 			return tbl.Flush()
 		}
 
-		return output.Print(map[string]any{itemsOutputKey: edges.Results, "next_cursor": edges.RawResponse.Next})
+		return output.Print(map[string]any{itemsOutputKey: edges.Results, nextCursorOutputKey: edges.RawResponse.Next})
 	},
 }
 

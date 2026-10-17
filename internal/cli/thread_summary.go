@@ -85,7 +85,7 @@ var threadSummaryListCmd = &cobra.Command{
 			return tbl.Flush()
 		}
 
-		return output.Print(map[string]any{itemsOutputKey: summaries, "next_cursor": page.RawResponse.Next})
+		return output.Print(map[string]any{itemsOutputKey: summaries, nextCursorOutputKey: page.RawResponse.Next})
 	},
 }
 

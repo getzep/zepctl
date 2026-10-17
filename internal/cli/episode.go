@@ -80,7 +80,7 @@ var episodeListCmd = &cobra.Command{
 			return tbl.Flush()
 		}
 
-		return output.Print(map[string]any{itemsOutputKey: episodes, "next_cursor": episodePage.RawResponse.Next})
+		return output.Print(map[string]any{itemsOutputKey: episodes, nextCursorOutputKey: episodePage.RawResponse.Next})
 	},
 }
 

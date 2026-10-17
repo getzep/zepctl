@@ -85,7 +85,7 @@ var graphListCmd = &cobra.Command{
 			return tbl.Flush()
 		}
 
-		return output.Print(map[string]any{itemsOutputKey: graphs.Results, "next_cursor": graphs.RawResponse.Next})
+		return output.Print(map[string]any{itemsOutputKey: graphs.Results, nextCursorOutputKey: graphs.RawResponse.Next})
 	},
 }
 
@@ -590,7 +590,7 @@ var graphSearchCmd = &cobra.Command{
 					}
 				})
 			}
-			return output.Print(map[string]any{itemsOutputKey: page.Results, "next_cursor": page.RawResponse.Next})
+			return output.Print(map[string]any{itemsOutputKey: page.Results, nextCursorOutputKey: page.RawResponse.Next})
 		}
 		if scope == "nodes" {
 			req := &zep.SearchNodesRequest{Query: query, PageSize: zep.Int(limit)}
@@ -633,7 +633,7 @@ var graphSearchCmd = &cobra.Command{
 					}
 				})
 			}
-			return output.Print(map[string]any{itemsOutputKey: page.Results, "next_cursor": page.RawResponse.Next})
+			return output.Print(map[string]any{itemsOutputKey: page.Results, nextCursorOutputKey: page.RawResponse.Next})
 		}
 		if scope == "episodes" {
 			req := &zep.SearchEpisodesRequest{Query: query, PageSize: zep.Int(limit)}
@@ -662,7 +662,7 @@ var graphSearchCmd = &cobra.Command{
 					}
 				})
 			}
-			return output.Print(map[string]any{itemsOutputKey: page.Results, "next_cursor": page.RawResponse.Next})
+			return output.Print(map[string]any{itemsOutputKey: page.Results, nextCursorOutputKey: page.RawResponse.Next})
 		}
 		if scope == "observations" {
 			req := &zep.SearchObservationsRequest{Query: query, PageSize: zep.Int(limit)}
@@ -691,7 +691,7 @@ var graphSearchCmd = &cobra.Command{
 					}
 				})
 			}
-			return output.Print(map[string]any{itemsOutputKey: page.Results, "next_cursor": page.RawResponse.Next})
+			return output.Print(map[string]any{itemsOutputKey: page.Results, nextCursorOutputKey: page.RawResponse.Next})
 		}
 		req := &zep.SearchThreadSummariesRequest{Query: query, PageSize: zep.Int(limit)}
 		if cursor != "" {
@@ -718,7 +718,7 @@ var graphSearchCmd = &cobra.Command{
 				}
 			})
 		}
-		return output.Print(map[string]any{itemsOutputKey: page.Results, "next_cursor": page.RawResponse.Next})
+		return output.Print(map[string]any{itemsOutputKey: page.Results, nextCursorOutputKey: page.RawResponse.Next})
 	},
 }
 

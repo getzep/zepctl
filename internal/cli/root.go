@@ -10,8 +10,9 @@ import (
 )
 
 const (
-	listCmdUse     = "list"
-	itemsOutputKey = "items"
+	listCmdUse          = "list"
+	itemsOutputKey      = "items"
+	nextCursorOutputKey = "next_cursor"
 )
 
 var (

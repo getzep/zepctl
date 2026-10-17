@@ -73,7 +73,7 @@ var observationListCmd = &cobra.Command{
 			return tbl.Flush()
 		}
 
-		return output.Print(map[string]any{itemsOutputKey: observations, "next_cursor": page.RawResponse.Next})
+		return output.Print(map[string]any{itemsOutputKey: observations, nextCursorOutputKey: page.RawResponse.Next})
 	},
 }
 

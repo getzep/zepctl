@@ -82,7 +82,7 @@ var threadListCmd = &cobra.Command{
 			return tbl.Flush()
 		}
 
-		return output.Print(map[string]any{itemsOutputKey: threads.Results, "next_cursor": threads.RawResponse.Next})
+		return output.Print(map[string]any{itemsOutputKey: threads.Results, nextCursorOutputKey: threads.RawResponse.Next})
 	},
 }
 
@@ -270,7 +270,7 @@ var threadMessagesCmd = &cobra.Command{
 			return tbl.Flush()
 		}
 
-		return output.Print(map[string]any{itemsOutputKey: messages.Results, "next_cursor": messages.RawResponse.Next})
+		return output.Print(map[string]any{itemsOutputKey: messages.Results, nextCursorOutputKey: messages.RawResponse.Next})
 	},
 }
 
