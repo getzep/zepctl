@@ -96,6 +96,21 @@ Configuration file location: `~/.zepctl/config.yaml`. API keys and OAuth refresh
 
 See [docs/cli.mdx](docs/cli.mdx) for complete CLI reference.
 
+Commands that address users, threads, and graphs require Zep UUIDs. A v3 ID returns `invalid_identifier`. The `user create --user-id` flag sets an external identity-provider ID; it is not a resource address.
+
+Use `--limit` and `--cursor` to list the next page. The cursor is opaque.
+
+```bash
+zepctl user list --limit 50
+zepctl user get <user-uuid>
+zepctl user create --user-id <external-id>
+zepctl thread create --user <user-uuid>
+zepctl graph create --name <name> --description <description>
+zepctl graph delete <graph-uuid> --force --wait
+```
+
+Delete commands that return an asynchronous task print its UUID. Add `--wait` to wait for completion. `node update` does not support `--labels`.
+
 ## License
 
 See [LICENSE](LICENSE) for details.

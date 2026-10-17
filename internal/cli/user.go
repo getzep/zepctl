@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/getzep/zep-go/v3"
+	"github.com/getzep/zep-go/v4"
 	"github.com/getzep/zepctl/internal/abac"
 	"github.com/getzep/zepctl/internal/client"
 	"github.com/getzep/zepctl/internal/output"
@@ -29,35 +29,47 @@ var userListCmd = &cobra.Command{
 			return err
 		}
 
-		page, _ := cmd.Flags().GetInt("page")
-		pageSize, _ := cmd.Flags().GetInt("page-size")
+		limit, _ := cmd.Flags().GetInt("limit")
+		cursor, _ := cmd.Flags().GetString("cursor")
 		search, _ := cmd.Flags().GetString("search")
 		orderBy, _ := cmd.Flags().GetString("order-by")
 		asc, _ := cmd.Flags().GetBool("asc")
 
-		req := &zep.UserListOrderedRequest{
-			PageNumber: zep.Int(page),
-			PageSize:   zep.Int(pageSize),
+		req := &zep.UserListRequest{}
+		if limit > 0 {
+			req.PageSize = zep.Int(limit)
+		}
+		if cursor != "" {
+			req.Cursor = zep.String(cursor)
 		}
 		if search != "" {
 			req.Search = zep.String(search)
 		}
 		if orderBy != "" {
-			req.OrderBy = zep.String(orderBy)
+			value := zep.UserListRequestOrderBy(orderBy)
+			req.OrderBy = &value
 		}
 		if cmd.Flags().Changed("asc") {
-			req.Asc = zep.Bool(asc)
+			order := zep.UserListRequestOrder("desc")
+			if asc {
+				order = "asc"
+			}
+			req.Order = &order
 		}
 
-		users, err := c.User.ListOrdered(context.Background(), req)
+		users, err := c.User.List(context.Background(), req)
 		if err != nil {
 			return fmt.Errorf("listing users: %w", err)
 		}
 
 		if output.GetFormat() == output.FormatTable {
-			tbl := output.NewTable("USER ID", "EMAIL", "FIRST NAME", "LAST NAME", "CREATED AT")
+			tbl := output.NewTable("UUID", "USER ID", "EMAIL", "FIRST NAME", "LAST NAME", "CREATED AT")
 			tbl.WriteHeader()
-			for _, u := range users.Users {
+			for _, u := range users.Results {
+				uuid := ""
+				if u.UUID != nil {
+					uuid = *u.UUID
+				}
 				email := ""
 				if u.Email != nil {
 					email = *u.Email
@@ -78,28 +90,29 @@ var userListCmd = &cobra.Command{
 				if u.UserID != nil {
 					userID = *u.UserID
 				}
-				tbl.WriteRow(userID, email, firstName, lastName, createdAt)
+				tbl.WriteRow(uuid, userID, email, firstName, lastName, createdAt)
 			}
+			writeNextCursor(users.RawResponse.Next)
 			return tbl.Flush()
 		}
 
-		return output.Print(users)
+		return output.Print(map[string]any{"items": users.Results, "next_cursor": users.RawResponse.Next})
 	},
 }
 
 var userGetCmd = &cobra.Command{
-	Use:   "get <user-id>",
+	Use:   "get <user-uuid>",
 	Short: "Get user details",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		userID := args[0]
+		userUUID := args[0]
 
 		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
 
-		user, err := c.User.Get(context.Background(), userID)
+		user, err := c.User.Get(context.Background(), userUUID)
 		if err != nil {
 			return fmt.Errorf("getting user: %w", err)
 		}
@@ -111,9 +124,11 @@ var userGetCmd = &cobra.Command{
 			if user.UserID != nil {
 				userIDStr = *user.UserID
 			}
-			tbl.WriteRow("User ID", userIDStr)
 			if user.UUID != nil {
 				tbl.WriteRow("UUID", *user.UUID)
+			}
+			if user.UserID != nil {
+				tbl.WriteRow("User ID", userIDStr)
 			}
 			if user.Email != nil {
 				tbl.WriteRow("Email", *user.Email)
@@ -135,12 +150,10 @@ var userGetCmd = &cobra.Command{
 }
 
 var userCreateCmd = &cobra.Command{
-	Use:   "create <user-id>",
+	Use:   "create",
 	Short: "Create a new user",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		userID := args[0]
-
 		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
@@ -149,11 +162,13 @@ var userCreateCmd = &cobra.Command{
 		email, _ := cmd.Flags().GetString("email")
 		firstName, _ := cmd.Flags().GetString("first-name")
 		lastName, _ := cmd.Flags().GetString("last-name")
+		userID, _ := cmd.Flags().GetString("user-id")
 		metadataStr, _ := cmd.Flags().GetString("metadata")
 		metadataFile, _ := cmd.Flags().GetString("metadata-file")
 
-		req := &zep.CreateUserRequest{
-			UserID: userID,
+		req := &zep.CreateUserRequest{}
+		if userID != "" {
+			req.UserID = zep.String(userID)
 		}
 
 		if email != "" {
@@ -182,22 +197,24 @@ var userCreateCmd = &cobra.Command{
 			req.Metadata = metadata
 		}
 
-		user, err := c.User.Add(context.Background(), req)
+		user, err := c.User.Create(context.Background(), req)
 		if err != nil {
 			return fmt.Errorf("creating user: %w", err)
 		}
 
-		output.Info("Created user %q", userID)
+		if user.UUID != nil {
+			output.Info("Created user %s", *user.UUID)
+		}
 		return output.Print(user)
 	},
 }
 
 var userUpdateCmd = &cobra.Command{
-	Use:   "update <user-id>",
+	Use:   "update <user-uuid>",
 	Short: "Update an existing user",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		userID := args[0]
+		userUUID := args[0]
 
 		c, err := client.NewForCommand(cmd)
 		if err != nil {
@@ -210,7 +227,7 @@ var userUpdateCmd = &cobra.Command{
 		metadataStr, _ := cmd.Flags().GetString("metadata")
 		metadataFile, _ := cmd.Flags().GetString("metadata-file")
 
-		req := &zep.UpdateUserRequest{}
+		req := &zep.PatchUserRequest{}
 
 		if email != "" {
 			req.Email = zep.String(email)
@@ -238,27 +255,27 @@ var userUpdateCmd = &cobra.Command{
 			req.Metadata = metadata
 		}
 
-		user, err := c.User.Update(context.Background(), userID, req)
+		user, err := c.User.Update(context.Background(), userUUID, req)
 		if err != nil {
 			return fmt.Errorf("updating user: %w", err)
 		}
 
-		output.Info("Updated user %q", userID)
+		output.Info("Updated user %q", userUUID)
 		return output.Print(user)
 	},
 }
 
 var userDeleteCmd = &cobra.Command{
-	Use:   "delete <user-id>",
+	Use:   "delete <user-uuid>",
 	Short: "Delete a user",
 	Long:  `Delete a user and all associated data (threads, graph, knowledge). Supports RTBF compliance.`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		userID := args[0]
+		userUUID := args[0]
 		force, _ := cmd.Flags().GetBool("force")
 
 		if !force {
-			fmt.Printf("Delete user %q and all associated data? This cannot be undone. [y/N]: ", userID)
+			fmt.Printf("Delete user %q and all associated data? This cannot be undone. [y/N]: ", userUUID)
 			if !confirmYesNo() {
 				output.Info("Aborted")
 				return nil
@@ -270,36 +287,53 @@ var userDeleteCmd = &cobra.Command{
 			return err
 		}
 
-		if _, err := c.User.Delete(context.Background(), userID); err != nil {
+		result, err := c.User.Delete(context.Background(), userUUID)
+		if err != nil {
 			return fmt.Errorf("deleting user: %w", err)
 		}
 
-		output.Info("Deleted user %q", userID)
+		wait, _ := cmd.Flags().GetBool("wait")
+		timeout, _ := cmd.Flags().GetDuration("timeout")
+		if result.Task != nil && result.Task.UUID != nil {
+			output.Info("Deletion task: %s", *result.Task.UUID)
+			if wait {
+				return waitForTask(c, *result.Task.UUID, timeout, defaultTaskPollInterval)
+			}
+		}
 		return nil
 	},
 }
 
 var userThreadsCmd = &cobra.Command{
-	Use:   "threads <user-id>",
+	Use:   "threads <user-uuid>",
 	Short: "List user threads",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		userID := args[0]
+		userUUID := args[0]
 
 		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
 
-		threads, err := c.User.GetThreads(context.Background(), userID)
+		limit, _ := cmd.Flags().GetInt("limit")
+		cursor, _ := cmd.Flags().GetString("cursor")
+		req := &zep.ThreadListRequest{UserUUID: zep.String(userUUID)}
+		if limit > 0 {
+			req.PageSize = zep.Int(limit)
+		}
+		if cursor != "" {
+			req.Cursor = zep.String(cursor)
+		}
+		threads, err := c.Thread.List(context.Background(), req)
 		if err != nil {
 			return fmt.Errorf("getting user threads: %w", err)
 		}
 
 		if output.GetFormat() == output.FormatTable {
-			tbl := output.NewTable("THREAD ID", "CREATED AT")
+			tbl := output.NewTable("UUID", "THREAD ID", "CREATED AT")
 			tbl.WriteHeader()
-			for _, t := range threads {
+			for _, t := range threads.Results {
 				createdAt := ""
 				if t.CreatedAt != nil {
 					createdAt = *t.CreatedAt
@@ -308,17 +342,22 @@ var userThreadsCmd = &cobra.Command{
 				if t.ThreadID != nil {
 					threadID = *t.ThreadID
 				}
-				tbl.WriteRow(threadID, createdAt)
+				uuid := ""
+				if t.UUID != nil {
+					uuid = *t.UUID
+				}
+				tbl.WriteRow(uuid, threadID, createdAt)
 			}
+			writeNextCursor(threads.RawResponse.Next)
 			return tbl.Flush()
 		}
 
-		return output.Print(threads)
+		return output.Print(map[string]any{"items": threads.Results, "next_cursor": threads.RawResponse.Next})
 	},
 }
 
 var userNodeCmd = &cobra.Command{
-	Use:   "node <user-id>",
+	Use:   "node <user-uuid>",
 	Short: "Get user graph node",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -350,21 +389,30 @@ var userMembershipsCmd = &cobra.Command{
 		if err := validateUUID(args[0], "user"); err != nil {
 			return err
 		}
-		ac, err := newABACClient(cmd)
+		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
-		result, err := ac.ListUserGroupsForUser(cmd.Context(), args[0])
+		limit, _ := cmd.Flags().GetInt("limit")
+		cursor, _ := cmd.Flags().GetString("cursor")
+		request := &zep.UserGroupListForUserRequest{}
+		if limit > 0 {
+			request.PageSize = zep.Int(limit)
+		}
+		if cursor != "" {
+			request.Cursor = zep.String(cursor)
+		}
+		page, err := c.UserGroup.ListForUser(cmd.Context(), args[0], request)
 		if err != nil {
-			if abac.IsNotFound(err) {
-				return fmt.Errorf("user not found: %s", args[0])
-			}
 			return fmt.Errorf("listing user groups: %w", err)
 		}
 		if output.GetFormat() == output.FormatTable {
-			return renderUserGroupTable(result.UserGroups)
+			if page.RawResponse.Next != nil && *page.RawResponse.Next != "" {
+				output.Info("Next cursor: %s", *page.RawResponse.Next)
+			}
+			return renderUserGroupTable(page.Results)
 		}
-		return output.Print(result)
+		return output.Print(map[string]any{"items": page.Results, "next_cursor": page.RawResponse.Next})
 	},
 }
 
@@ -414,8 +462,8 @@ func init() {
 	userCmd.AddCommand(userExplainCmd)
 
 	// List flags
-	userListCmd.Flags().Int("page", 1, "Page number")
-	userListCmd.Flags().Int("page-size", 50, "Results per page")
+	userListCmd.Flags().Int("limit", 50, "Maximum number of results")
+	userListCmd.Flags().String("cursor", "", "Cursor from the previous page")
 	userListCmd.Flags().String("search", "", "Search by user_id, name, or email")
 	userListCmd.Flags().String("order-by", "", "Sort by column (created_at, user_id, email)")
 	userListCmd.Flags().Bool("asc", false, "Sort ascending")
@@ -424,6 +472,7 @@ func init() {
 	userCreateCmd.Flags().String("email", "", "User email address")
 	userCreateCmd.Flags().String("first-name", "", "User first name")
 	userCreateCmd.Flags().String("last-name", "", "User last name")
+	userCreateCmd.Flags().String("user-id", "", "External identity-provider user ID")
 	userCreateCmd.Flags().String("metadata", "", "JSON metadata string")
 	userCreateCmd.Flags().String("metadata-file", "", "Path to JSON metadata file")
 
@@ -436,10 +485,12 @@ func init() {
 
 	// Delete flags
 	userDeleteCmd.Flags().Bool("force", false, "Skip confirmation prompt")
+	userDeleteCmd.Flags().Bool("wait", false, "Wait for asynchronous deletion")
+	userDeleteCmd.Flags().Duration("timeout", defaultTaskTimeout, "Maximum time to wait")
 
 	// Threads flags
-	userThreadsCmd.Flags().Int("page", 1, "Page number")
-	userThreadsCmd.Flags().Int("page-size", 50, "Results per page")
+	userThreadsCmd.Flags().Int("limit", 50, "Maximum number of results")
+	userThreadsCmd.Flags().String("cursor", "", "Cursor from the previous page")
 
 	// ABAC dry-run flags
 	for _, cmd := range []*cobra.Command{userEvaluateCmd, userExplainCmd} {
@@ -453,4 +504,6 @@ func init() {
 	for _, cmd := range []*cobra.Command{userMembershipsCmd, userEvaluateCmd, userExplainCmd} {
 		client.SetCredentialType(cmd, client.CredentialBearer)
 	}
+	userMembershipsCmd.Flags().Int("limit", 50, "Maximum number of results")
+	userMembershipsCmd.Flags().String("cursor", "", "Cursor from the previous page")
 }

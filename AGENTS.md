@@ -6,7 +6,7 @@ This document outlines development practices required when contributing to the z
 
 - **Language**: Go 1.25+
 - **CLI Framework**: Cobra with Viper for configuration
-- **SDK**: github.com/getzep/zep-go/v3
+- **SDK**: github.com/getzep/zep-go/v4
 
 ## Build and Quality Commands
 
@@ -95,15 +95,15 @@ docs/               # Documentation files
 
 ### Pagination
 
-The Zep SDK uses cursor-based pagination:
-- `Limit *int` - Maximum items to return
-- `UUIDCursor *string` - UUID of last item from previous page
+The Zep V4 SDK uses cursor-based pagination:
+- `PageSize *int` - Maximum items to return
+- `Cursor *string` - Opaque cursor from the previous page
 
 Use `zep.Int()` and `zep.String()` helpers for pointer fields:
 ```go
-req := &zep.GraphNodesRequest{
-    Limit:      zep.Int(limit),
-    UUIDCursor: zep.String(cursor),
+req := &zep.UserListRequest{
+    PageSize: zep.Int(limit),
+    Cursor:   zep.String(cursor),
 }
 ```
 
@@ -112,7 +112,7 @@ req := &zep.GraphNodesRequest{
 When implementing exclusion filters, use the correct SDK fields:
 - `ExcludeNodeLabels` (not `NodeLabels`) for `--exclude-node-labels` flag
 - `ExcludeEdgeTypes` (not `EdgeTypes`) for `--exclude-edge-types` flag
-- `MinScore` and `MinFactRating` were removed in SDK v3.17.0; the CLI no longer exposes these flags
+- Keep search flags only when the selected V4 request supports them.
 
 ## Output Formatting
 
@@ -177,10 +177,6 @@ Implement mutual exclusion and dependency validation early in command handlers:
 ```go
 if sourceUser != "" && sourceGraph != "" {
     return fmt.Errorf("--source-user and --source-graph are mutually exclusive")
-}
-
-if sourceUser != "" && targetGraph != "" {
-    return fmt.Errorf("--target-graph cannot be used with --source-user")
 }
 ```
 

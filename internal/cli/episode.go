@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/getzep/zep-go/v3"
-	"github.com/getzep/zep-go/v3/graph"
+	"github.com/getzep/zep-go/v4"
+	"github.com/getzep/zep-go/v4/graph"
 	"github.com/getzep/zepctl/internal/client"
 	"github.com/getzep/zepctl/internal/output"
 	"github.com/spf13/cobra"
@@ -34,31 +34,27 @@ var episodeListCmd = &cobra.Command{
 			return err
 		}
 
-		var episodeResp *zep.EpisodeResponse
-
+		graphUUID := graphID
 		if userID != "" {
-			req := &graph.EpisodeGetByUserIDRequest{}
-			if lastN > 0 {
-				req.Lastn = zep.Int(lastN)
-			}
-			result, err := c.Graph.Episode.GetByUserID(context.Background(), userID, req)
-			if err != nil {
-				return fmt.Errorf("listing episodes: %w", err)
-			}
-			episodeResp = result
-		} else {
-			req := &graph.EpisodeGetByGraphIDRequest{}
-			if lastN > 0 {
-				req.Lastn = zep.Int(lastN)
-			}
-			result, err := c.Graph.Episode.GetByGraphID(context.Background(), graphID, req)
-			if err != nil {
-				return fmt.Errorf("listing episodes: %w", err)
-			}
-			episodeResp = result
+			graphUUID = userID
 		}
-
-		episodes := episodeResp.Episodes
+		limit, _ := cmd.Flags().GetInt("limit")
+		cursor, _ := cmd.Flags().GetString("cursor")
+		if lastN > 0 {
+			limit = lastN
+		}
+		req := &graph.EpisodeListRequest{}
+		if limit > 0 {
+			req.PageSize = zep.Int(limit)
+		}
+		if cursor != "" {
+			req.Cursor = zep.String(cursor)
+		}
+		episodePage, err := c.Graph.Episode.List(context.Background(), graphUUID, req)
+		if err != nil {
+			return fmt.Errorf("listing episodes: %w", err)
+		}
+		episodes := episodePage.Results
 
 		if output.GetFormat() == output.FormatTable {
 			tbl := output.NewTable("UUID", "SOURCE", "ROLE", "CONTENT", "CREATED AT")
@@ -70,34 +66,41 @@ var episodeListCmd = &cobra.Command{
 				}
 				role := ""
 				if ep.Role != nil {
-					role = *ep.Role
+					role = string(*ep.Role)
 				}
-				content := ep.Content
+				content := valueOrEmpty(ep.Content)
 				if len(content) > 40 {
 					content = content[:40] + "..."
 				}
-				tbl.WriteRow(ep.UUID, source, role, content, ep.CreatedAt)
+				tbl.WriteRow(valueOrEmpty(ep.UUID), source, role, content, valueOrEmpty(ep.CreatedAt))
+			}
+			if episodePage.RawResponse.Next != nil && *episodePage.RawResponse.Next != "" {
+				output.Info("Next cursor: %s", *episodePage.RawResponse.Next)
 			}
 			return tbl.Flush()
 		}
 
-		return output.Print(episodes)
+		return output.Print(map[string]any{"items": episodes, "next_cursor": episodePage.RawResponse.Next})
 	},
 }
 
 var episodeGetCmd = &cobra.Command{
-	Use:   "get <uuid>",
+	Use:   "get <episode-uuid>",
 	Short: "Get episode details",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		uuid := args[0]
+		graphUUID, err := graphUUIDFromFlags(cmd)
+		if err != nil {
+			return err
+		}
 
 		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
 
-		episode, err := c.Graph.Episode.Get(context.Background(), uuid)
+		episode, err := c.Graph.Episode.Get(context.Background(), graphUUID, uuid)
 		if err != nil {
 			return fmt.Errorf("getting episode: %w", err)
 		}
@@ -105,7 +108,7 @@ var episodeGetCmd = &cobra.Command{
 		if output.GetFormat() == output.FormatTable {
 			tbl := output.NewTable("FIELD", "VALUE")
 			tbl.WriteHeader()
-			tbl.WriteRow("UUID", episode.UUID)
+			tbl.WriteRow("UUID", valueOrEmpty(episode.UUID))
 			if episode.Source != nil {
 				tbl.WriteRow("Source", string(*episode.Source))
 			}
@@ -113,13 +116,10 @@ var episodeGetCmd = &cobra.Command{
 				tbl.WriteRow("Source Description", *episode.SourceDescription)
 			}
 			if episode.Role != nil {
-				tbl.WriteRow("Role", *episode.Role)
+				tbl.WriteRow("Role", string(*episode.Role))
 			}
-			if episode.RoleType != nil {
-				tbl.WriteRow("Role Type", string(*episode.RoleType))
-			}
-			tbl.WriteRow("Content", episode.Content)
-			tbl.WriteRow("Created At", episode.CreatedAt)
+			tbl.WriteRow("Content", valueOrEmpty(episode.Content))
+			tbl.WriteRow("Created At", valueOrEmpty(episode.CreatedAt))
 			return tbl.Flush()
 		}
 
@@ -128,29 +128,60 @@ var episodeGetCmd = &cobra.Command{
 }
 
 var episodeMentionsCmd = &cobra.Command{
-	Use:   "mentions <uuid>",
+	Use:   "mentions <episode-uuid>",
 	Short: "Get nodes and edges mentioned in an episode",
 	Long:  `Returns nodes and edges mentioned in the specified episode.`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		uuid := args[0]
+		graphUUID, err := graphUUIDFromFlags(cmd)
+		if err != nil {
+			return err
+		}
 
 		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
 
-		mentions, err := c.Graph.Episode.GetNodesAndEdges(context.Background(), uuid)
+		limit, _ := cmd.Flags().GetInt("limit")
+		cursor, _ := cmd.Flags().GetString("cursor")
+		_, err = c.Graph.Episode.Get(context.Background(), graphUUID, uuid)
 		if err != nil {
-			return fmt.Errorf("getting episode mentions: %w", err)
+			return fmt.Errorf("getting episode: %w", err)
 		}
 
-		return output.Print(mentions)
+		nodeRequest := &graph.NodeListRequest{Filters: &zep.NodeListFilters{EpisodeUUIDs: []string{uuid}}}
+		if limit > 0 {
+			nodeRequest.PageSize = zep.Int(limit)
+		}
+		if cursor != "" {
+			nodeRequest.Cursor = zep.String(cursor)
+		}
+		nodes, err := c.Graph.Node.List(context.Background(), graphUUID, nodeRequest)
+		if err != nil {
+			return fmt.Errorf("listing episode nodes: %w", err)
+		}
+		edgeRequest := &graph.EdgeListRequest{Filters: &zep.EdgeListFilters{EpisodeUUIDs: []string{uuid}}}
+		if limit > 0 {
+			edgeRequest.PageSize = zep.Int(limit)
+		}
+		if cursor != "" {
+			edgeRequest.Cursor = zep.String(cursor)
+		}
+		edges, err := c.Graph.Edge.List(context.Background(), graphUUID, edgeRequest)
+		if err != nil {
+			return fmt.Errorf("listing episode edges: %w", err)
+		}
+		return output.Print(map[string]any{
+			"nodes": nodes.Results, "nodes_next_cursor": nodes.RawResponse.Next,
+			"edges": edges.Results, "edges_next_cursor": edges.RawResponse.Next,
+		})
 	},
 }
 
 var episodeDeleteCmd = &cobra.Command{
-	Use:   "delete <uuid>",
+	Use:   "delete <episode-uuid>",
 	Short: "Delete an episode",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -170,11 +201,23 @@ var episodeDeleteCmd = &cobra.Command{
 			return err
 		}
 
-		if _, err := c.Graph.Episode.Delete(context.Background(), uuid); err != nil {
+		graphUUID, err := graphUUIDFromFlags(cmd)
+		if err != nil {
+			return err
+		}
+		result, err := c.Graph.Episode.Delete(context.Background(), graphUUID, uuid)
+		if err != nil {
 			return fmt.Errorf("deleting episode: %w", err)
 		}
 
-		output.Info("Deleted episode %q", uuid)
+		wait, _ := cmd.Flags().GetBool("wait")
+		timeout, _ := cmd.Flags().GetDuration("timeout")
+		if result.Task != nil && result.Task.UUID != nil {
+			output.Info("Deletion task: %s", *result.Task.UUID)
+			if wait {
+				return waitForTask(c, *result.Task.UUID, timeout, defaultTaskPollInterval)
+			}
+		}
 		return nil
 	},
 }
@@ -187,10 +230,20 @@ func init() {
 	episodeCmd.AddCommand(episodeDeleteCmd)
 
 	// List flags
-	episodeListCmd.Flags().String("user", "", "List episodes for user graph")
-	episodeListCmd.Flags().String("graph", "", "List episodes for standalone graph")
+	episodeListCmd.Flags().String("user", "", "User UUID for a user graph")
+	episodeListCmd.Flags().String("graph", "", "Graph UUID for a standalone graph")
 	episodeListCmd.Flags().Int("last", 0, "Get last N episodes")
+	episodeListCmd.Flags().Int("limit", 50, "Maximum number of results")
+	episodeListCmd.Flags().String("cursor", "", "Cursor from the previous page")
+	for _, command := range []*cobra.Command{episodeGetCmd, episodeMentionsCmd, episodeDeleteCmd} {
+		command.Flags().String("user", "", "User UUID for a user graph")
+		command.Flags().String("graph", "", "Graph UUID for a standalone graph")
+	}
+	episodeMentionsCmd.Flags().Int("limit", 50, "Maximum number of results")
+	episodeMentionsCmd.Flags().String("cursor", "", "Cursor from the previous page")
 
 	// Delete flags
 	episodeDeleteCmd.Flags().Bool("force", false, "Skip confirmation prompt")
+	episodeDeleteCmd.Flags().Bool("wait", false, "Wait for asynchronous deletion")
+	episodeDeleteCmd.Flags().Duration("timeout", defaultTaskTimeout, "Maximum time to wait")
 }

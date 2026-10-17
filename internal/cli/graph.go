@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
-	"github.com/getzep/zep-go/v3"
+	"github.com/getzep/zep-go/v4"
+	graph "github.com/getzep/zep-go/v4/graph"
 	"github.com/getzep/zepctl/internal/client"
 	"github.com/getzep/zepctl/internal/output"
 	"github.com/spf13/cobra"
@@ -28,23 +30,31 @@ var graphListCmd = &cobra.Command{
 			return err
 		}
 
-		page, _ := cmd.Flags().GetInt("page")
-		pageSize, _ := cmd.Flags().GetInt("page-size")
+		limit, _ := cmd.Flags().GetInt("limit")
+		cursor, _ := cmd.Flags().GetString("cursor")
 		orderBy, _ := cmd.Flags().GetString("order-by")
 		asc, _ := cmd.Flags().GetBool("asc")
 
-		req := &zep.GraphListAllRequest{
-			PageNumber: zep.Int(page),
-			PageSize:   zep.Int(pageSize),
+		req := &zep.GraphListRequest{}
+		if limit > 0 {
+			req.PageSize = zep.Int(limit)
+		}
+		if cursor != "" {
+			req.Cursor = zep.String(cursor)
 		}
 		if orderBy != "" {
-			req.OrderBy = zep.String(orderBy)
+			value := zep.GraphListRequestOrderBy(orderBy)
+			req.OrderBy = &value
 		}
 		if cmd.Flags().Changed("asc") {
-			req.Asc = zep.Bool(asc)
+			order := zep.GraphListRequestOrder("desc")
+			if asc {
+				order = "asc"
+			}
+			req.Order = &order
 		}
 
-		graphs, err := c.Graph.ListAll(context.Background(), req)
+		graphs, err := c.Graph.List(context.Background(), req)
 		if err != nil {
 			return fmt.Errorf("listing graphs: %w", err)
 		}
@@ -52,7 +62,7 @@ var graphListCmd = &cobra.Command{
 		if output.GetFormat() == output.FormatTable {
 			tbl := output.NewTable("UUID", "GRAPH ID", "NAME", "CREATED AT")
 			tbl.WriteHeader()
-			for _, g := range graphs.Graphs {
+			for _, g := range graphs.Results {
 				uuid := ""
 				if g.UUID != nil {
 					uuid = *g.UUID
@@ -71,48 +81,52 @@ var graphListCmd = &cobra.Command{
 				}
 				tbl.WriteRow(uuid, graphID, name, createdAt)
 			}
+			writeNextCursor(graphs.RawResponse.Next)
 			return tbl.Flush()
 		}
 
-		return output.Print(graphs)
+		return output.Print(map[string]any{"items": graphs.Results, "next_cursor": graphs.RawResponse.Next})
 	},
 }
 
 var graphCreateCmd = &cobra.Command{
-	Use:   "create <graph-id>",
+	Use:   "create",
 	Short: "Create a new graph",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		graphID := args[0]
-
 		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
+		name, _ := cmd.Flags().GetString("name")
+		description, _ := cmd.Flags().GetString("description")
 
 		graph, err := c.Graph.Create(context.Background(), &zep.CreateGraphRequest{
-			GraphID: graphID,
+			Name:        zep.String(name),
+			Description: zep.String(description),
 		})
 		if err != nil {
 			return fmt.Errorf("creating graph: %w", err)
 		}
 
-		output.Info("Created graph %q", graphID)
+		if graph.UUID != nil {
+			output.Info("Created graph %s", *graph.UUID)
+		}
 		return output.Print(graph)
 	},
 }
 
 var graphDeleteCmd = &cobra.Command{
-	Use:   "delete <graph-id>",
+	Use:   "delete <graph-uuid>",
 	Short: "Delete a graph",
 	Long:  `Delete a graph. To delete a user graph, use 'zepctl user delete' instead.`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		graphID := args[0]
+		graphUUID := args[0]
 		force, _ := cmd.Flags().GetBool("force")
 
 		if !force {
-			fmt.Printf("Delete graph %q? [y/N]: ", graphID)
+			fmt.Printf("Delete graph %q? [y/N]: ", graphUUID)
 			if !confirmYesNo() {
 				output.Info("Aborted")
 				return nil
@@ -124,11 +138,19 @@ var graphDeleteCmd = &cobra.Command{
 			return err
 		}
 
-		if _, err := c.Graph.Delete(context.Background(), graphID); err != nil {
+		result, err := c.Graph.Delete(context.Background(), graphUUID)
+		if err != nil {
 			return fmt.Errorf("deleting graph: %w", err)
 		}
 
-		output.Info("Deleted graph %q", graphID)
+		wait, _ := cmd.Flags().GetBool("wait")
+		timeout, _ := cmd.Flags().GetDuration("timeout")
+		if result.Task != nil && result.Task.UUID != nil {
+			output.Info("Deletion task: %s", *result.Task.UUID)
+			if wait {
+				return waitForTask(c, *result.Task.UUID, timeout, defaultTaskPollInterval)
+			}
+		}
 		return nil
 	},
 }
@@ -136,12 +158,10 @@ var graphDeleteCmd = &cobra.Command{
 var graphCloneCmd = &cobra.Command{
 	Use:   "clone",
 	Short: "Clone a graph",
-	Long:  `Clone a user graph or standalone graph to a new ID.`,
+	Long:  `Clone a user graph or standalone graph to a new graph UUID.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		sourceUser, _ := cmd.Flags().GetString("source-user")
-		targetUser, _ := cmd.Flags().GetString("target-user")
 		sourceGraph, _ := cmd.Flags().GetString("source-graph")
-		targetGraph, _ := cmd.Flags().GetString("target-graph")
 
 		if sourceUser == "" && sourceGraph == "" {
 			return fmt.Errorf("either --source-user or --source-graph is required")
@@ -151,42 +171,31 @@ var graphCloneCmd = &cobra.Command{
 			return fmt.Errorf("--source-user and --source-graph are mutually exclusive")
 		}
 
-		if sourceUser != "" && targetGraph != "" {
-			return fmt.Errorf("--target-graph cannot be used with --source-user; use --target-user instead")
-		}
-
-		if sourceGraph != "" && targetUser != "" {
-			return fmt.Errorf("--target-user cannot be used with --source-graph; use --target-graph instead")
-		}
-
 		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
 
-		req := &zep.CloneGraphRequest{}
-
+		sourceUUID := sourceGraph
 		if sourceUser != "" {
-			req.SourceUserID = zep.String(sourceUser)
-			if targetUser != "" {
-				req.TargetUserID = zep.String(targetUser)
-			}
-		} else {
-			req.SourceGraphID = zep.String(sourceGraph)
-			if targetGraph != "" {
-				req.TargetGraphID = zep.String(targetGraph)
-			}
+			sourceUUID = sourceUser
 		}
 
-		resp, err := c.Graph.Clone(context.Background(), req)
+		resp, err := c.Graph.Clone(context.Background(), sourceUUID, zep.CloneGraphRequest{})
 		if err != nil {
 			return fmt.Errorf("cloning graph: %w", err)
 		}
 
-		if resp.GraphID != nil {
-			output.Info("Cloned to graph: %s", *resp.GraphID)
-		} else if resp.UserID != nil {
-			output.Info("Cloned to user: %s", *resp.UserID)
+		if resp.Graph != nil && resp.Graph.UUID != nil {
+			output.Info("Cloned to graph: %s", *resp.Graph.UUID)
+		}
+		wait, _ := cmd.Flags().GetBool("wait")
+		timeout, _ := cmd.Flags().GetDuration("timeout")
+		if resp.Task != nil && resp.Task.UUID != nil {
+			output.Info("Clone task: %s", *resp.Task.UUID)
+			if wait {
+				return waitForTask(c, *resp.Task.UUID, timeout, defaultTaskPollInterval)
+			}
 		}
 
 		return output.Print(resp)
@@ -200,15 +209,22 @@ type EpisodeInput struct {
 
 // EpisodeData represents a single episode for batch import.
 type EpisodeData struct {
-	Type string `json:"type"`
-	Data string `json:"data"`
+	Type          string `json:"type"`
+	Data          string `json:"data"`
+	ReferenceTime string `json:"reference_time,omitempty"`
 }
 
 var graphAddCmd = &cobra.Command{
-	Use:   "add [graph-id]",
+	Use:   "add <graph-uuid>",
 	Short: "Add data to a graph",
 	Long:  `Add text, JSON, or message data to a graph or user graph.`,
-	Args:  cobra.MaximumNArgs(1),
+	Args: func(cmd *cobra.Command, args []string) error {
+		userUUID, _ := cmd.Flags().GetString("user")
+		if len(args) > 1 || (userUUID == "" && len(args) != 1) || (userUUID != "" && len(args) != 0) {
+			return fmt.Errorf("provide either a graph UUID argument or --user <user-uuid>")
+		}
+		return nil
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		userID, _ := cmd.Flags().GetString("user")
 		dataType, _ := cmd.Flags().GetString("type")
@@ -218,13 +234,9 @@ var graphAddCmd = &cobra.Command{
 		batch, _ := cmd.Flags().GetBool("batch")
 		wait, _ := cmd.Flags().GetBool("wait")
 
-		var graphID string
-		if len(args) > 0 {
-			graphID = args[0]
-		}
-
-		if userID == "" && graphID == "" {
-			return fmt.Errorf("either graph-id argument or --user flag is required")
+		graphUUID := ""
+		if len(args) == 1 {
+			graphUUID = args[0]
 		}
 
 		c, err := client.NewForCommand(cmd)
@@ -254,35 +266,52 @@ var graphAddCmd = &cobra.Command{
 				return fmt.Errorf("parsing episodes: %w", err)
 			}
 
-			var episodes []*zep.EpisodeData
+			var items []*zep.BatchItemInput
 			for _, e := range input.Episodes {
-				episodeType := zep.GraphDataType(e.Type)
-				episodes = append(episodes, &zep.EpisodeData{
-					Data: e.Data,
-					Type: episodeType,
-				})
+				dataType := zep.BatchItemInputDataType(e.Type)
+				item := &zep.BatchItemInput{
+					Type:     zep.BatchItemInputTypeGraphEpisode,
+					Data:     zep.String(e.Data),
+					DataType: &dataType,
+				}
+				if e.ReferenceTime != "" {
+					item.ReferenceTime = zep.String(e.ReferenceTime)
+				}
+				if userID != "" {
+					item.UserUUID = zep.String(userID)
+				} else {
+					item.GraphUUID = zep.String(graphUUID)
+				}
+				items = append(items, item)
 			}
 
-			req := &zep.AddDataBatchRequest{
-				Episodes: episodes,
-			}
-			if userID != "" {
-				req.UserID = zep.String(userID)
-			} else {
-				req.GraphID = zep.String(graphID)
-			}
-
-			resp, err := c.Graph.AddBatch(context.Background(), req)
+			createdBatch, err := c.Batch.Create(context.Background(), &zep.CreateBatchRequest{})
 			if err != nil {
-				return fmt.Errorf("adding batch data: %w", err)
+				return fmt.Errorf("creating graph batch: %w", err)
+			}
+			if createdBatch.UUID == nil {
+				return fmt.Errorf("creating graph batch: response did not include a batch UUID")
+			}
+			if _, err := c.Batch.AddItems(context.Background(), *createdBatch.UUID, &zep.AddBatchItemsRequest{Items: items}); err != nil {
+				return fmt.Errorf("adding graph batch items: %w", err)
+			}
+			resp, err := c.Batch.Process(context.Background(), *createdBatch.UUID)
+			if err != nil {
+				return fmt.Errorf("processing graph batch: %w", err)
 			}
 
-			output.Info("Added %d episodes to graph", len(resp))
-			if !wait {
-				return output.Print(resp)
+			if resp.Task != nil && resp.Task.UUID != nil {
+				output.Info("Batch task: %s", *resp.Task.UUID)
+				if wait {
+					if err := waitForTask(c, *resp.Task.UUID, defaultTaskTimeout, defaultTaskPollInterval); err != nil {
+						return err
+					}
+				}
+			} else if wait {
+				if err := waitForBatch(c, *createdBatch.UUID, defaultTaskTimeout); err != nil {
+					return err
+				}
 			}
-
-			// If wait is requested, we just report completion since batch returns episodes directly
 			return output.Print(resp)
 		}
 
@@ -306,24 +335,30 @@ var graphAddCmd = &cobra.Command{
 			return fmt.Errorf("--data, --file, or --stdin is required")
 		}
 
-		episodeType := zep.GraphDataType(dataType)
-		req := &zep.AddDataRequest{
+		episodeType := graph.AddEpisodeRequestType(dataType)
+		req := &graph.AddEpisodeRequest{
 			Data: dataContent,
-			Type: episodeType,
+			Type: &episodeType,
 		}
+		graphUUIDForAdd := graphUUID
 		if userID != "" {
-			req.UserID = zep.String(userID)
-		} else {
-			req.GraphID = zep.String(graphID)
+			graphUUIDForAdd = userID
 		}
-
-		resp, err := c.Graph.Add(context.Background(), req)
+		resp, err := c.Graph.Episode.Add(context.Background(), graphUUIDForAdd, req)
 		if err != nil {
 			return fmt.Errorf("adding data: %w", err)
 		}
 
+		if resp.Task != nil && resp.Task.UUID != nil {
+			output.Info("Ingestion task: %s", *resp.Task.UUID)
+			if wait {
+				if err := waitForTask(c, *resp.Task.UUID, defaultTaskTimeout, defaultTaskPollInterval); err != nil {
+					return err
+				}
+			}
+		}
 		output.Info("Added data to graph")
-		return output.Print(resp)
+		return output.Print(resp.Episode)
 	},
 }
 
@@ -352,6 +387,9 @@ Example: --source-attrs '{"type": "Person", "age": 30}'`,
 		if userID == "" && graphID == "" {
 			return fmt.Errorf("either --user or --graph is required")
 		}
+		if userID != "" && graphID != "" {
+			return fmt.Errorf("--user and --graph are mutually exclusive")
+		}
 
 		if fact == "" {
 			return fmt.Errorf("--fact is required")
@@ -371,40 +409,37 @@ Example: --source-attrs '{"type": "Person", "age": 30}'`,
 			return err
 		}
 
-		req := &zep.AddTripleRequest{
-			Fact:           fact,
-			FactName:       factName,
-			SourceNodeName: zep.String(sourceNodeName),
-			TargetNodeName: zep.String(targetNodeName),
-		}
-
+		graphUUID := graphID
 		if userID != "" {
-			req.UserID = zep.String(userID)
-		} else {
-			req.GraphID = zep.String(graphID)
+			graphUUID = userID
 		}
 
+		edge := &zep.EdgeInput{
+			Fact:       fact,
+			FactName:   factName,
+			SourceNode: &zep.EdgeNodeRef{Name: zep.String(sourceNodeName)},
+			TargetNode: &zep.EdgeNodeRef{Name: zep.String(targetNodeName)},
+		}
 		if validAt != "" {
-			req.ValidAt = zep.String(validAt)
+			edge.ValidAt = zep.String(validAt)
 		}
-
 		if invalidAt != "" {
-			req.InvalidAt = zep.String(invalidAt)
+			edge.InvalidAt = zep.String(invalidAt)
 		}
 
 		if sourceLabelsStr != "" {
 			labels := strings.Split(sourceLabelsStr, ",")
 			if len(labels) > 1 {
-				return fmt.Errorf("--source-label accepts a single value; got %d", len(labels))
+				return fmt.Errorf("--source-labels accepts a single value; got %d", len(labels))
 			}
-			req.SourceNodeLabels = labels
+			edge.SourceNode.Labels = labels
 		}
 		if targetLabelsStr != "" {
 			labels := strings.Split(targetLabelsStr, ",")
 			if len(labels) > 1 {
-				return fmt.Errorf("--target-label accepts a single value; got %d", len(labels))
+				return fmt.Errorf("--target-labels accepts a single value; got %d", len(labels))
 			}
-			req.TargetNodeLabels = labels
+			edge.TargetNode.Labels = labels
 		}
 
 		// Parse source node attributes
@@ -413,7 +448,7 @@ Example: --source-attrs '{"type": "Person", "age": 30}'`,
 			if err := json.Unmarshal([]byte(sourceAttrsStr), &sourceAttrs); err != nil {
 				return fmt.Errorf("parsing source-attrs: %w", err)
 			}
-			req.SourceNodeAttributes = sourceAttrs
+			edge.SourceNode.Attributes = sourceAttrs
 		}
 
 		// Parse edge attributes
@@ -422,7 +457,7 @@ Example: --source-attrs '{"type": "Person", "age": 30}'`,
 			if err := json.Unmarshal([]byte(edgeAttrsStr), &edgeAttrs); err != nil {
 				return fmt.Errorf("parsing edge-attrs: %w", err)
 			}
-			req.EdgeAttributes = edgeAttrs
+			edge.Attributes = edgeAttrs
 		}
 
 		// Parse target node attributes
@@ -431,10 +466,13 @@ Example: --source-attrs '{"type": "Person", "age": 30}'`,
 			if err := json.Unmarshal([]byte(targetAttrsStr), &targetAttrs); err != nil {
 				return fmt.Errorf("parsing target-attrs: %w", err)
 			}
-			req.TargetNodeAttributes = targetAttrs
+			edge.TargetNode.Attributes = targetAttrs
 		}
 
-		resp, err := c.Graph.AddFactTriple(context.Background(), req)
+		resp, err := c.Graph.Edge.Add(context.Background(), graphUUID, &graph.AddEdgesRequest{
+			Deduplicate: zep.Bool(true),
+			Edges:       []*zep.EdgeInput{edge},
+		})
 		if err != nil {
 			return fmt.Errorf("adding fact triple: %w", err)
 		}
@@ -447,493 +485,219 @@ Example: --source-attrs '{"type": "Person", "age": 30}'`,
 var graphSearchCmd = &cobra.Command{
 	Use:   "search <query>",
 	Short: "Search a graph",
-	Long: `Search a user graph or standalone graph for edges, nodes, episodes, observations,
-thread_summaries, or auto.
-
-Property filters allow filtering by node/edge attributes:
-  --property-filter "property_name:operator:value"
-
-  Operators: =, <>, >, <, >=, <=, IS NULL, IS NOT NULL
-
-  Examples:
-    --property-filter "age:>:30"
-    --property-filter "status:=:active"
-    --property-filter "deleted_at:IS NULL"
-    --property-filter "verified:IS NOT NULL"
-
-Date filters allow filtering by date fields (created_at, valid_at, invalid_at, expired_at):
-  --date-filter "field:operator:date"
-
-  Examples:
-    --date-filter "created_at:>:2024-01-01"
-    --date-filter "valid_at:IS NULL"
-    --date-filter "invalid_at:IS NOT NULL"`,
-	Args: cobra.ExactArgs(1),
+	Long:  `Search a graph by scope. Use --user or --graph with a UUID.`,
+	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		query := args[0]
-
 		userID, _ := cmd.Flags().GetString("user")
-		graphID, _ := cmd.Flags().GetString("graph")
+		graphUUID, _ := cmd.Flags().GetString("graph")
 		scope, _ := cmd.Flags().GetString("scope")
 		limit, _ := cmd.Flags().GetInt("limit")
+		cursor, _ := cmd.Flags().GetString("cursor")
 		reranker, _ := cmd.Flags().GetString("reranker")
 		mmrLambda, _ := cmd.Flags().GetFloat64("mmr-lambda")
 		maxCharacters, _ := cmd.Flags().GetInt("max-characters")
-		returnRawResults, _ := cmd.Flags().GetBool("return-raw-results")
+		includeResults, _ := cmd.Flags().GetBool("return-raw-results")
 		excludeNodeLabels, _ := cmd.Flags().GetString("exclude-node-labels")
 		excludeEdgeTypes, _ := cmd.Flags().GetString("exclude-edge-types")
 		nodeLabels, _ := cmd.Flags().GetString("node-labels")
 		edgeTypes, _ := cmd.Flags().GetString("edge-types")
-		propertyFilters, _ := cmd.Flags().GetStringArray("property-filter")
-		dateFilters, _ := cmd.Flags().GetStringArray("date-filter")
+		propertyFilterArgs, _ := cmd.Flags().GetStringArray("property-filter")
+		dateFilterArgs, _ := cmd.Flags().GetStringArray("date-filter")
 
-		if userID == "" && graphID == "" {
+		if userID == "" && graphUUID == "" {
 			return fmt.Errorf("either --user or --graph is required")
+		}
+		if userID != "" && graphUUID != "" {
+			return fmt.Errorf("--user and --graph are mutually exclusive")
+		}
+		if userID != "" {
+			graphUUID = userID
+		}
+		scopeFlags, ok := graphSearchScopeFlags[scope]
+		if !ok {
+			return fmt.Errorf("invalid scope %q", scope)
+		}
+		for _, name := range graphSearchFlags {
+			if cmd.Flags().Changed(name) && !scopeFlags[name] {
+				return fmt.Errorf("--%s is not supported with scope %s", name, scope)
+			}
 		}
 
 		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
-
-		req := &zep.GraphSearchQuery{
-			Query: query,
-			Limit: zep.Int(limit),
-		}
-
-		if userID != "" {
-			req.UserID = zep.String(userID)
-		} else {
-			req.GraphID = zep.String(graphID)
-		}
-
-		if scope != "" {
-			s := zep.GraphSearchScope(scope)
-			req.Scope = &s
-		}
-
-		if reranker != "" {
-			r := zep.Reranker(reranker)
-			req.Reranker = &r
-		}
-
-		if cmd.Flags().Changed("mmr-lambda") {
-			req.MmrLambda = zep.Float64(mmrLambda)
-		}
-
-		if cmd.Flags().Changed("max-characters") {
-			req.MaxCharacters = zep.Int(maxCharacters)
-		}
-
-		if cmd.Flags().Changed("return-raw-results") {
-			req.ReturnRawResults = zep.Bool(returnRawResults)
-		}
-
-		// Build search filters
-		hasFilters := excludeNodeLabels != "" || excludeEdgeTypes != "" ||
-			nodeLabels != "" || edgeTypes != "" ||
-			len(propertyFilters) > 0 || len(dateFilters) > 0
-
-		if hasFilters {
-			if req.SearchFilters == nil {
-				req.SearchFilters = &zep.SearchFilters{}
+		if scope == "auto" {
+			req := &zep.GraphContextRequest{Query: query}
+			if cmd.Flags().Changed("max-characters") {
+				req.MaxCharacters = zep.Int(maxCharacters)
 			}
+			if cmd.Flags().Changed("return-raw-results") {
+				req.IncludeResults = zep.Bool(includeResults)
+			}
+			resp, err := c.Graph.GetContext(context.Background(), graphUUID, req)
+			if err != nil {
+				return fmt.Errorf("getting graph context: %w", err)
+			}
+			return output.Print(resp)
+		}
 
-			if excludeNodeLabels != "" {
-				req.SearchFilters.ExcludeNodeLabels = strings.Split(excludeNodeLabels, ",")
+		if scope == "edges" {
+			req := &zep.SearchEdgesRequest{Query: query, PageSize: zep.Int(limit)}
+			filters := &zep.EdgeSearchFilters{}
+			if cmd.Flags().Changed("edge-types") {
+				filters.EdgeTypes = splitFlagValues(edgeTypes)
 			}
-			if excludeEdgeTypes != "" {
-				req.SearchFilters.ExcludeEdgeTypes = strings.Split(excludeEdgeTypes, ",")
+			if cmd.Flags().Changed("exclude-edge-types") {
+				filters.ExcludeEdgeTypes = splitFlagValues(excludeEdgeTypes)
 			}
-			if nodeLabels != "" {
-				req.SearchFilters.NodeLabels = strings.Split(nodeLabels, ",")
-			}
-			if edgeTypes != "" {
-				req.SearchFilters.EdgeTypes = strings.Split(edgeTypes, ",")
-			}
-
-			// Parse property filters
-			if len(propertyFilters) > 0 {
-				parsedFilters, err := parsePropertyFilters(propertyFilters)
+			if len(propertyFilterArgs) > 0 {
+				filters.PropertyFilters, err = parsePropertyFilters(propertyFilterArgs)
 				if err != nil {
 					return err
 				}
-				req.SearchFilters.PropertyFilters = parsedFilters
 			}
-
-			// Parse date filters
-			if len(dateFilters) > 0 {
-				if err := parseDateFilters(dateFilters, req.SearchFilters); err != nil {
+			if len(dateFilterArgs) > 0 {
+				filters.DateFilters, err = parseDateFilters(dateFilterArgs)
+				if err != nil {
 					return err
 				}
 			}
-		}
-
-		resp, err := c.Graph.Search(context.Background(), req)
-		if err != nil {
-			return fmt.Errorf("searching graph: %w", err)
-		}
-
-		if output.GetFormat() == output.FormatTable {
-			switch scope {
-			case "edges":
-				tbl := output.NewTable("UUID", "FACT", "VALID AT", "INVALID AT")
-				tbl.WriteHeader()
-				for _, e := range resp.Edges {
-					fact := e.Fact
-					if len(fact) > 60 {
-						fact = fact[:60] + "..."
-					}
-					validAt := ""
-					if e.ValidAt != nil {
-						validAt = *e.ValidAt
-					}
-					invalidAt := ""
-					if e.InvalidAt != nil {
-						invalidAt = *e.InvalidAt
-					}
-					tbl.WriteRow(e.UUID, fact, validAt, invalidAt)
-				}
-				return tbl.Flush()
-			case "nodes":
-				tbl := output.NewTable("UUID", "NAME", "SUMMARY")
-				tbl.WriteHeader()
-				for _, n := range resp.Nodes {
-					summary := n.Summary
-					if len(summary) > 50 {
-						summary = summary[:50] + "..."
-					}
-					tbl.WriteRow(n.UUID, n.Name, summary)
-				}
-				return tbl.Flush()
-			case "observations":
-				tbl := output.NewTable("UUID", "NAME", "SUMMARY")
-				tbl.WriteHeader()
-				for _, o := range resp.Observations {
-					summary := ""
-					if o.Summary != nil {
-						summary = *o.Summary
-						if len(summary) > 50 {
-							summary = summary[:50] + "..."
-						}
-					}
-					tbl.WriteRow(o.UUID, o.Name, summary)
-				}
-				return tbl.Flush()
-			case "thread_summaries":
-				tbl := output.NewTable("UUID", "NAME", "SUMMARY", "LAST SUMMARIZED AT")
-				tbl.WriteHeader()
-				for _, s := range resp.ThreadSummaries {
-					summary := ""
-					if s.Summary != nil {
-						summary = *s.Summary
-						if len(summary) > 50 {
-							summary = summary[:50] + "..."
-						}
-					}
-					lastSummarizedAt := ""
-					if s.LastSummarizedAt != nil {
-						lastSummarizedAt = *s.LastSummarizedAt
-					}
-					tbl.WriteRow(s.UUID, s.Name, summary, lastSummarizedAt)
-				}
-				return tbl.Flush()
+			if cmd.Flags().Changed("edge-types") || cmd.Flags().Changed("exclude-edge-types") || len(propertyFilterArgs) > 0 || len(dateFilterArgs) > 0 {
+				req.Filters = filters
 			}
-		}
-
-		return output.Print(resp)
-	},
-}
-
-var graphDetectPatternsCmd = &cobra.Command{
-	Use:   "detect-patterns",
-	Short: "Detect structural patterns in a graph",
-	Long: `Detects structural patterns in a knowledge graph including relationship frequencies,
-multi-hop paths, co-occurrences, hubs, and clusters.
-
-Pass --query to discover seed nodes via hybrid search; this forces triple-frequency
-detection and returns resolved edges with cross-encoder reranking. --query is
-mutually exclusive with seed selection flags (--node-labels/--edge-types/--node-uuids).`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		userID, _ := cmd.Flags().GetString("user")
-		graphID, _ := cmd.Flags().GetString("graph")
-		limit, _ := cmd.Flags().GetInt("limit")
-		minOccurrences, _ := cmd.Flags().GetInt("min-occurrences")
-		recencyWeight, _ := cmd.Flags().GetString("recency-weight")
-		nodeLabels, _ := cmd.Flags().GetString("node-labels")
-		edgeTypes, _ := cmd.Flags().GetString("edge-types")
-		nodeUUIDs, _ := cmd.Flags().GetString("node-uuids")
-		query, _ := cmd.Flags().GetString("query")
-		queryLimit, _ := cmd.Flags().GetInt("query-limit")
-		edgeLimit, _ := cmd.Flags().GetInt("edge-limit")
-
-		if userID == "" && graphID == "" {
-			return fmt.Errorf("either --user or --graph is required")
-		}
-
-		hasSeeds := nodeLabels != "" || edgeTypes != "" || nodeUUIDs != ""
-		if query != "" && hasSeeds {
-			return fmt.Errorf("--query is mutually exclusive with --node-labels/--edge-types/--node-uuids")
-		}
-
-		c, err := client.NewForCommand(cmd)
-		if err != nil {
-			return err
-		}
-
-		req := &zep.DetectPatternsRequest{
-			Limit:          zep.Int(limit),
-			MinOccurrences: zep.Int(minOccurrences),
-		}
-
-		if userID != "" {
-			req.UserID = zep.String(userID)
-		} else {
-			req.GraphID = zep.String(graphID)
-		}
-
-		if recencyWeight != "" {
-			rw, err := zep.NewRecencyWeightFromString(recencyWeight)
+			if cursor != "" {
+				req.Cursor = zep.String(cursor)
+			}
+			if reranker != "" {
+				value := zep.SearchEdgesRequestReranker(reranker)
+				req.Reranker = &value
+			}
+			if cmd.Flags().Changed("mmr-lambda") {
+				req.MmrLambda = zep.Float64(mmrLambda)
+			}
+			page, err := c.Graph.SearchEdges(context.Background(), graphUUID, req)
 			if err != nil {
-				return fmt.Errorf("invalid recency-weight %q (valid: none, 7_days, 30_days, 90_days): %w", recencyWeight, err)
+				return fmt.Errorf("searching edges: %w", err)
 			}
-			req.RecencyWeight = rw.Ptr()
+			return output.Print(map[string]any{"items": page.Results, "next_cursor": page.RawResponse.Next})
 		}
-
-		if query != "" {
-			req.Query = zep.String(query)
-			if cmd.Flags().Changed("query-limit") {
-				req.QueryLimit = zep.Int(queryLimit)
+		if scope == "nodes" {
+			req := &zep.SearchNodesRequest{Query: query, PageSize: zep.Int(limit)}
+			filters := &zep.NodeSearchFilters{}
+			if cmd.Flags().Changed("node-labels") {
+				filters.NodeLabels = splitFlagValues(nodeLabels)
 			}
-			if cmd.Flags().Changed("edge-limit") {
-				req.EdgeLimit = zep.Int(edgeLimit)
+			if cmd.Flags().Changed("exclude-node-labels") {
+				filters.ExcludeNodeLabels = splitFlagValues(excludeNodeLabels)
 			}
+			if len(propertyFilterArgs) > 0 {
+				filters.PropertyFilters, err = parsePropertyFilters(propertyFilterArgs)
+				if err != nil {
+					return err
+				}
+			}
+			if cmd.Flags().Changed("node-labels") || cmd.Flags().Changed("exclude-node-labels") || len(propertyFilterArgs) > 0 {
+				req.Filters = filters
+			}
+			if cursor != "" {
+				req.Cursor = zep.String(cursor)
+			}
+			if reranker != "" {
+				value := zep.SearchNodesRequestReranker(reranker)
+				req.Reranker = &value
+			}
+			if cmd.Flags().Changed("mmr-lambda") {
+				req.MmrLambda = zep.Float64(mmrLambda)
+			}
+			page, err := c.Graph.SearchNodes(context.Background(), graphUUID, req)
+			if err != nil {
+				return fmt.Errorf("searching nodes: %w", err)
+			}
+			return output.Print(map[string]any{"items": page.Results, "next_cursor": page.RawResponse.Next})
 		}
-
-		if hasSeeds {
-			seeds := &zep.PatternSeeds{}
-			if nodeLabels != "" {
-				seeds.NodeLabels = strings.Split(nodeLabels, ",")
+		if scope == "episodes" {
+			req := &zep.SearchEpisodesRequest{Query: query, PageSize: zep.Int(limit)}
+			if cursor != "" {
+				req.Cursor = zep.String(cursor)
 			}
-			if edgeTypes != "" {
-				seeds.EdgeTypes = strings.Split(edgeTypes, ",")
+			if reranker != "" {
+				value := zep.SearchEpisodesRequestReranker(reranker)
+				req.Reranker = &value
 			}
-			if nodeUUIDs != "" {
-				seeds.NodeUUIDs = strings.Split(nodeUUIDs, ",")
+			if cmd.Flags().Changed("mmr-lambda") {
+				req.MmrLambda = zep.Float64(mmrLambda)
 			}
-			req.Seeds = seeds
+			page, err := c.Graph.SearchEpisodes(context.Background(), graphUUID, req)
+			if err != nil {
+				return fmt.Errorf("searching episodes: %w", err)
+			}
+			return output.Print(map[string]any{"items": page.Results, "next_cursor": page.RawResponse.Next})
 		}
-
-		resp, err := c.Graph.DetectPatterns(context.Background(), req)
+		if scope == "observations" {
+			req := &zep.SearchObservationsRequest{Query: query, PageSize: zep.Int(limit)}
+			if cursor != "" {
+				req.Cursor = zep.String(cursor)
+			}
+			if reranker != "" {
+				value := zep.SearchObservationsRequestReranker(reranker)
+				req.Reranker = &value
+			}
+			if cmd.Flags().Changed("mmr-lambda") {
+				req.MmrLambda = zep.Float64(mmrLambda)
+			}
+			page, err := c.Graph.SearchObservations(context.Background(), graphUUID, req)
+			if err != nil {
+				return fmt.Errorf("searching observations: %w", err)
+			}
+			return output.Print(map[string]any{"items": page.Results, "next_cursor": page.RawResponse.Next})
+		}
+		req := &zep.SearchThreadSummariesRequest{Query: query, PageSize: zep.Int(limit)}
+		if cursor != "" {
+			req.Cursor = zep.String(cursor)
+		}
+		if reranker != "" {
+			value := zep.SearchThreadSummariesRequestReranker(reranker)
+			req.Reranker = &value
+		}
+		if cmd.Flags().Changed("mmr-lambda") {
+			req.MmrLambda = zep.Float64(mmrLambda)
+		}
+		page, err := c.Graph.SearchThreadSummaries(context.Background(), graphUUID, req)
 		if err != nil {
-			return fmt.Errorf("detecting patterns: %w", err)
+			return fmt.Errorf("searching thread summaries: %w", err)
 		}
-
-		if output.GetFormat() == output.FormatTable {
-			tbl := output.NewTable("TYPE", "DESCRIPTION", "OCCURRENCES", "WEIGHTED SCORE")
-			tbl.WriteHeader()
-			for _, p := range resp.Patterns {
-				patternType := ""
-				if p.Type != nil {
-					patternType = *p.Type
-				}
-				desc := ""
-				if p.Summary != nil {
-					desc = *p.Summary
-				} else if p.Description != nil {
-					desc = *p.Description
-				}
-				if len(desc) > 60 {
-					desc = desc[:60] + "..."
-				}
-				occurrences := 0
-				if p.Occurrences != nil {
-					occurrences = *p.Occurrences
-				}
-				weightedScore := 0.0
-				if p.WeightedScore != nil {
-					weightedScore = *p.WeightedScore
-				}
-				tbl.WriteRow(patternType, desc, fmt.Sprintf("%d", occurrences), fmt.Sprintf("%.2f", weightedScore))
-			}
-			return tbl.Flush()
-		}
-
-		return output.Print(resp)
+		return output.Print(map[string]any{"items": page.Results, "next_cursor": page.RawResponse.Next})
 	},
 }
 
-// parsePropertyFilters parses property filter strings into PropertyFilter objects.
-// Format: "property_name:operator:value" or "property_name:IS NULL" / "property_name:IS NOT NULL".
-func parsePropertyFilters(filters []string) ([]*zep.PropertyFilter, error) {
-	var result []*zep.PropertyFilter
-
-	for _, f := range filters {
-		pf, err := parsePropertyFilter(f)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, pf)
+func graphUUIDFromFlags(cmd *cobra.Command) (string, error) {
+	graphUUID, _ := cmd.Flags().GetString("graph")
+	userUUID, _ := cmd.Flags().GetString("user")
+	if graphUUID != "" && userUUID != "" {
+		return "", fmt.Errorf("--graph and --user are mutually exclusive")
 	}
-
-	return result, nil
+	if userUUID != "" {
+		graphUUID = userUUID
+	}
+	if graphUUID == "" {
+		return "", fmt.Errorf("either --graph or --user is required")
+	}
+	return graphUUID, nil
 }
 
-func parsePropertyFilter(filter string) (*zep.PropertyFilter, error) {
-	// Check for IS NULL / IS NOT NULL operators first
-	if strings.Contains(filter, ":IS NOT NULL") {
-		parts := strings.SplitN(filter, ":IS NOT NULL", 2)
-		if len(parts) < 1 || parts[0] == "" {
-			return nil, fmt.Errorf("invalid property filter format: %q", filter)
-		}
-		return &zep.PropertyFilter{
-			PropertyName:       parts[0],
-			ComparisonOperator: zep.ComparisonOperatorIsNotNull,
-		}, nil
+func valueOrEmpty[T ~string](value *T) string {
+	if value == nil {
+		return ""
 	}
-
-	if strings.Contains(filter, ":IS NULL") {
-		parts := strings.SplitN(filter, ":IS NULL", 2)
-		if len(parts) < 1 || parts[0] == "" {
-			return nil, fmt.Errorf("invalid property filter format: %q", filter)
-		}
-		return &zep.PropertyFilter{
-			PropertyName:       parts[0],
-			ComparisonOperator: zep.ComparisonOperatorIsNull,
-		}, nil
-	}
-
-	// Parse format: "property_name:operator:value"
-	parts := strings.SplitN(filter, ":", 3)
-	if len(parts) != 3 {
-		return nil, fmt.Errorf("invalid property filter format: %q (expected property_name:operator:value)", filter)
-	}
-
-	propName := parts[0]
-	opStr := parts[1]
-	valueStr := parts[2]
-
-	op, err := parseComparisonOperator(opStr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid operator in property filter %q: %w", filter, err)
-	}
-
-	// Parse the value - try to detect type
-	var value interface{}
-	if valueStr == "true" {
-		value = true
-	} else if valueStr == "false" {
-		value = false
-	} else if valueStr == "null" || valueStr == "" {
-		value = nil
-	} else if i, err := json.Number(valueStr).Int64(); err == nil {
-		value = i
-	} else if f, err := json.Number(valueStr).Float64(); err == nil {
-		value = f
-	} else {
-		value = valueStr
-	}
-
-	return &zep.PropertyFilter{
-		PropertyName:       propName,
-		ComparisonOperator: op,
-		PropertyValue:      value,
-	}, nil
+	return string(*value)
 }
 
-func parseComparisonOperator(op string) (zep.ComparisonOperator, error) {
-	switch op {
-	case "=", "==":
-		return zep.ComparisonOperatorEquals, nil
-	case "<>", "!=":
-		return zep.ComparisonOperatorNotEquals, nil
-	case ">":
-		return zep.ComparisonOperatorGreaterThan, nil
-	case "<":
-		return zep.ComparisonOperatorLessThan, nil
-	case ">=":
-		return zep.ComparisonOperatorGreaterThanEqual, nil
-	case "<=":
-		return zep.ComparisonOperatorLessThanEqual, nil
-	case "IS NULL":
-		return zep.ComparisonOperatorIsNull, nil
-	case "IS NOT NULL":
-		return zep.ComparisonOperatorIsNotNull, nil
-	default:
-		return "", fmt.Errorf("unknown operator: %s", op)
+func writeNextCursor(cursor *string) {
+	if cursor != nil && *cursor != "" {
+		output.Info("Next cursor: %s", *cursor)
 	}
-}
-
-// parseDateFilters parses date filter strings and adds them to SearchFilters.
-// Format: "field:operator:date" or "field:IS NULL" / "field:IS NOT NULL".
-// Fields: created_at, valid_at, invalid_at, expired_at.
-func parseDateFilters(filters []string, sf *zep.SearchFilters) error {
-	for _, f := range filters {
-		if err := parseDateFilter(f, sf); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func parseDateFilter(filter string, sf *zep.SearchFilters) error {
-	// Check for IS NULL / IS NOT NULL operators first
-	if strings.Contains(filter, ":IS NOT NULL") {
-		parts := strings.SplitN(filter, ":IS NOT NULL", 2)
-		if len(parts) < 1 || parts[0] == "" {
-			return fmt.Errorf("invalid date filter format: %q", filter)
-		}
-		return addDateFilter(parts[0], zep.ComparisonOperatorIsNotNull, nil, sf)
-	}
-
-	if strings.Contains(filter, ":IS NULL") {
-		parts := strings.SplitN(filter, ":IS NULL", 2)
-		if len(parts) < 1 || parts[0] == "" {
-			return fmt.Errorf("invalid date filter format: %q", filter)
-		}
-		return addDateFilter(parts[0], zep.ComparisonOperatorIsNull, nil, sf)
-	}
-
-	// Parse format: "field:operator:date"
-	parts := strings.SplitN(filter, ":", 3)
-	if len(parts) != 3 {
-		return fmt.Errorf("invalid date filter format: %q (expected field:operator:date)", filter)
-	}
-
-	field := parts[0]
-	opStr := parts[1]
-	dateStr := parts[2]
-
-	op, err := parseComparisonOperator(opStr)
-	if err != nil {
-		return fmt.Errorf("invalid operator in date filter %q: %w", filter, err)
-	}
-
-	return addDateFilter(field, op, &dateStr, sf)
-}
-
-func addDateFilter(field string, op zep.ComparisonOperator, date *string, sf *zep.SearchFilters) error {
-	df := &zep.DateFilter{
-		ComparisonOperator: op,
-		Date:               date,
-	}
-
-	// Date filters use a 2D array where outer = OR, inner = AND
-	// For simplicity, each filter creates a new OR group with single element
-	switch field {
-	case "created_at":
-		sf.CreatedAt = append(sf.CreatedAt, []*zep.DateFilter{df})
-	case "valid_at":
-		sf.ValidAt = append(sf.ValidAt, []*zep.DateFilter{df})
-	case "invalid_at":
-		sf.InvalidAt = append(sf.InvalidAt, []*zep.DateFilter{df})
-	case "expired_at":
-		sf.ExpiredAt = append(sf.ExpiredAt, []*zep.DateFilter{df})
-	default:
-		return fmt.Errorf("unknown date field: %s (valid: created_at, valid_at, invalid_at, expired_at)", field)
-	}
-
-	return nil
 }
 
 func init() {
@@ -945,36 +709,39 @@ func init() {
 	graphCmd.AddCommand(graphAddCmd)
 	graphCmd.AddCommand(graphAddFactCmd)
 	graphCmd.AddCommand(graphSearchCmd)
-	graphCmd.AddCommand(graphDetectPatternsCmd)
 
 	// List flags
-	graphListCmd.Flags().Int("page", 1, "Page number")
-	graphListCmd.Flags().Int("page-size", 50, "Results per page")
-	graphListCmd.Flags().String("order-by", "", "Sort by column (created_at, group_id, name)")
-	graphListCmd.Flags().Bool("asc", false, "Sort ascending")
+	graphListCmd.Flags().Int("limit", 50, "Maximum number of results")
+	graphListCmd.Flags().String("cursor", "", "Cursor from the previous page")
+	graphListCmd.Flags().String("order-by", "", "Sort by UUID or created time")
+	graphListCmd.Flags().Bool("asc", false, "Sort in ascending order")
+
+	graphCreateCmd.Flags().String("name", "", "Graph name")
+	graphCreateCmd.Flags().String("description", "", "Graph description")
 
 	// Delete flags
 	graphDeleteCmd.Flags().Bool("force", false, "Skip confirmation prompt")
+	graphDeleteCmd.Flags().Bool("wait", false, "Wait for asynchronous deletion")
+	graphDeleteCmd.Flags().Duration("timeout", defaultTaskTimeout, "Maximum time to wait")
 
 	// Clone flags
-	graphCloneCmd.Flags().String("source-user", "", "Source user ID (for user graphs)")
-	graphCloneCmd.Flags().String("target-user", "", "Target user ID (for user graphs)")
-	graphCloneCmd.Flags().String("source-graph", "", "Source graph ID (for standalone graphs)")
-	graphCloneCmd.Flags().String("target-graph", "", "Target graph ID (for standalone graphs)")
+	graphCloneCmd.Flags().String("source-user", "", "Source user UUID")
+	graphCloneCmd.Flags().String("source-graph", "", "Source graph UUID")
 	graphCloneCmd.Flags().Bool("wait", false, "Wait for clone operation to complete")
+	graphCloneCmd.Flags().Duration("timeout", defaultTaskTimeout, "Maximum time to wait")
 
 	// Add flags
 	graphAddCmd.Flags().String("type", "text", "Data type: text, json, message")
 	graphAddCmd.Flags().String("data", "", "Inline data string")
 	graphAddCmd.Flags().String("file", "", "Path to data file")
 	graphAddCmd.Flags().Bool("stdin", false, "Read data from stdin")
-	graphAddCmd.Flags().String("user", "", "Add to user graph instead of standalone graph")
+	graphAddCmd.Flags().String("user", "", "User UUID for a user graph")
 	graphAddCmd.Flags().Bool("batch", false, "Enable batch processing (up to 20 episodes)")
 	graphAddCmd.Flags().Bool("wait", false, "Wait for ingestion to complete")
 
 	// Add-fact flags
-	graphAddFactCmd.Flags().String("user", "", "Add to user graph")
-	graphAddFactCmd.Flags().String("graph", "", "Add to standalone graph")
+	graphAddFactCmd.Flags().String("user", "", "User UUID for a user graph")
+	graphAddFactCmd.Flags().String("graph", "", "Graph UUID for a standalone graph")
 	graphAddFactCmd.Flags().String("fact", "", "The fact relating the two nodes (required)")
 	graphAddFactCmd.Flags().String("fact-name", "", "Edge name, should be UPPER_SNAKE_CASE (required)")
 	graphAddFactCmd.Flags().String("source-node", "", "Source node name (required)")
@@ -988,31 +755,235 @@ func init() {
 	graphAddFactCmd.Flags().String("target-labels", "", "Label for the target node (single value; API accepts at most one)")
 
 	// Search flags
-	graphSearchCmd.Flags().String("user", "", "Search user graph")
-	graphSearchCmd.Flags().String("graph", "", "Search standalone graph")
+	graphSearchCmd.Flags().String("user", "", "User UUID for a user graph")
+	graphSearchCmd.Flags().String("graph", "", "Graph UUID for a standalone graph")
 	graphSearchCmd.Flags().String("scope", "edges", "Search scope: edges, nodes, episodes, observations, thread_summaries, auto")
 	graphSearchCmd.Flags().Int("limit", 10, "Maximum results")
+	graphSearchCmd.Flags().String("cursor", "", "Cursor from the previous page")
 	graphSearchCmd.Flags().String("reranker", "", "Reranker: rrf, mmr, cross_encoder")
-	graphSearchCmd.Flags().Float64("mmr-lambda", 0, "MMR diversity/relevance balance (0-1)")
+	graphSearchCmd.Flags().Float64("mmr-lambda", 0, "MMR diversity/relevance balance from 0 to 1")
 	graphSearchCmd.Flags().Int("max-characters", 0, "Max total characters across selected results (scope=auto, max 50000)")
-	graphSearchCmd.Flags().Bool("return-raw-results", false, "When scope=auto, include raw graph results alongside the materialized context block")
-	graphSearchCmd.Flags().String("exclude-node-labels", "", "Comma-separated node labels to exclude")
-	graphSearchCmd.Flags().String("exclude-edge-types", "", "Comma-separated edge types to exclude")
-	graphSearchCmd.Flags().String("node-labels", "", "Comma-separated node labels to include")
-	graphSearchCmd.Flags().String("edge-types", "", "Comma-separated edge types to include")
-	graphSearchCmd.Flags().StringArray("property-filter", nil, "Property filter (can be repeated): property:op:value or property:IS NULL")
-	graphSearchCmd.Flags().StringArray("date-filter", nil, "Date filter (can be repeated): field:op:date or field:IS NULL")
+	graphSearchCmd.Flags().Bool("return-raw-results", false, "Include raw results when scope is auto")
+	graphSearchCmd.Flags().String("exclude-node-labels", "", "Comma-separated node labels to exclude (scope=nodes)")
+	graphSearchCmd.Flags().String("exclude-edge-types", "", "Comma-separated edge types to exclude (scope=edges)")
+	graphSearchCmd.Flags().String("node-labels", "", "Comma-separated node labels to include (scope=nodes)")
+	graphSearchCmd.Flags().String("edge-types", "", "Comma-separated edge types to include (scope=edges)")
+	graphSearchCmd.Flags().StringArray("property-filter", nil, "Property filter (scope=edges or nodes): property:op:value or property:IS NULL")
+	graphSearchCmd.Flags().StringArray("date-filter", nil, "Date filter (scope=edges): field:op:date or field:IS NULL")
+}
 
-	// Detect-patterns flags
-	graphDetectPatternsCmd.Flags().String("user", "", "Detect patterns in user graph")
-	graphDetectPatternsCmd.Flags().String("graph", "", "Detect patterns in standalone graph")
-	graphDetectPatternsCmd.Flags().Int("limit", 50, "Maximum patterns to return (max 200)")
-	graphDetectPatternsCmd.Flags().Int("min-occurrences", 2, "Minimum occurrence count to report")
-	graphDetectPatternsCmd.Flags().String("recency-weight", "", "Recency decay: none, 7_days, 30_days, 90_days")
-	graphDetectPatternsCmd.Flags().String("node-labels", "", "Comma-separated node labels for seed selection")
-	graphDetectPatternsCmd.Flags().String("edge-types", "", "Comma-separated edge types for seed selection")
-	graphDetectPatternsCmd.Flags().String("node-uuids", "", "Comma-separated node UUIDs for seed selection")
-	graphDetectPatternsCmd.Flags().String("query", "", "Search query for seed-node discovery; forces triple-frequency detection with edge resolution")
-	graphDetectPatternsCmd.Flags().Int("query-limit", 10, "Max seed nodes from query (max 50, only with --query)")
-	graphDetectPatternsCmd.Flags().Int("edge-limit", 10, "Max resolved edges per pattern (max 100, only with --query)")
+var graphSearchFlags = []string{
+	"limit", "cursor", "reranker", "mmr-lambda", "max-characters", "return-raw-results",
+	"exclude-node-labels", "exclude-edge-types", "node-labels", "edge-types", "property-filter", "date-filter",
+}
+
+var graphSearchScopeFlags = map[string]map[string]bool{
+	"edges": {
+		"limit": true, "cursor": true, "reranker": true, "mmr-lambda": true,
+		"exclude-edge-types": true, "edge-types": true, "property-filter": true, "date-filter": true,
+	},
+	"nodes": {
+		"limit": true, "cursor": true, "reranker": true, "mmr-lambda": true,
+		"exclude-node-labels": true, "node-labels": true, "property-filter": true,
+	},
+	"episodes": {
+		"limit": true, "cursor": true, "reranker": true, "mmr-lambda": true,
+	},
+	"observations": {
+		"limit": true, "cursor": true, "reranker": true, "mmr-lambda": true,
+	},
+	"thread_summaries": {
+		"limit": true, "cursor": true, "reranker": true, "mmr-lambda": true,
+	},
+	"auto": {
+		"max-characters": true, "return-raw-results": true,
+	},
+}
+
+func splitFlagValues(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+
+	var values []string
+	for _, part := range strings.Split(value, ",") {
+		if value := strings.TrimSpace(part); value != "" {
+			values = append(values, value)
+		}
+	}
+	return values
+}
+
+func parsePropertyFilters(filters []string) ([]*zep.PropertyFilter, error) {
+	result := make([]*zep.PropertyFilter, 0, len(filters))
+	for _, filter := range filters {
+		parsed, err := parsePropertyFilter(filter)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, parsed)
+	}
+	return result, nil
+}
+
+func parsePropertyFilter(filter string) (*zep.PropertyFilter, error) {
+	if parsed, matched, err := parseNullPropertyFilter(filter); matched {
+		return parsed, err
+	}
+
+	parts := strings.SplitN(filter, ":", 3)
+	if len(parts) != 3 || strings.TrimSpace(parts[0]) == "" {
+		return nil, fmt.Errorf("invalid property filter format: %q (expected property:operator:value)", filter)
+	}
+	operator, err := parseSearchComparisonOperator(parts[1])
+	if err != nil {
+		return nil, fmt.Errorf("invalid operator in property filter %q: %w", filter, err)
+	}
+	name := strings.TrimSpace(parts[0])
+	rawValue := strings.TrimSpace(parts[2])
+	if rawValue == "" || rawValue == "null" {
+		if operator != zep.PropertyFilterOperatorEq {
+			return nil, fmt.Errorf("property filter %q requires a non-null value", filter)
+		}
+		operator = zep.PropertyFilterOperatorIsNull
+		return &zep.PropertyFilter{PropertyName: zep.String(name), Operator: operator.Ptr()}, nil
+	}
+
+	value, err := parsePropertyFilterValue(rawValue)
+	if err != nil {
+		return nil, err
+	}
+	return &zep.PropertyFilter{
+		PropertyName: zep.String(name),
+		Operator:     operator.Ptr(),
+		Value:        value,
+	}, nil
+}
+
+func parseNullPropertyFilter(filter string) (*zep.PropertyFilter, bool, error) {
+	for _, operator := range []string{"IS NOT NULL", "IS NULL"} {
+		if !strings.Contains(filter, ":"+operator) {
+			continue
+		}
+		parts := strings.SplitN(filter, ":"+operator, 2)
+		name := strings.TrimSpace(parts[0])
+		if name == "" || strings.TrimSpace(parts[1]) != "" {
+			return nil, true, fmt.Errorf("invalid property filter format: %q", filter)
+		}
+		value, err := zep.NewPropertyFilterOperatorFromString(strings.ToLower(strings.ReplaceAll(operator, " ", "_")))
+		if err != nil {
+			return nil, true, err
+		}
+		return &zep.PropertyFilter{PropertyName: zep.String(name), Operator: value.Ptr()}, true, nil
+	}
+	return nil, false, nil
+}
+
+func parsePropertyFilterValue(rawValue string) (*zep.PropertyFilterValue, error) {
+	var value any
+	if rawValue == "true" || rawValue == "false" {
+		value = rawValue == "true"
+	} else {
+		var number json.Number
+		if err := json.Unmarshal([]byte(rawValue), &number); err == nil {
+			if integer, err := number.Int64(); err == nil {
+				value = integer
+			} else if decimal, err := number.Float64(); err == nil {
+				value = decimal
+			} else {
+				value = rawValue
+			}
+		} else {
+			value = rawValue
+		}
+	}
+
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("encoding property filter value: %w", err)
+	}
+	var propertyValue zep.PropertyFilterValue
+	if err := json.Unmarshal(encoded, &propertyValue); err != nil {
+		return nil, fmt.Errorf("parsing property filter value: %w", err)
+	}
+	return &propertyValue, nil
+}
+
+func parseSearchComparisonOperator(operator string) (zep.PropertyFilterOperator, error) {
+	switch operator {
+	case "=", "==":
+		return zep.PropertyFilterOperatorEq, nil
+	case "<>", "!=":
+		return zep.PropertyFilterOperatorNe, nil
+	case ">":
+		return zep.PropertyFilterOperatorGt, nil
+	case "<":
+		return zep.PropertyFilterOperatorLt, nil
+	case ">=":
+		return zep.PropertyFilterOperatorGte, nil
+	case "<=":
+		return zep.PropertyFilterOperatorLte, nil
+	default:
+		return "", fmt.Errorf("unknown operator: %s", operator)
+	}
+}
+
+func parseDateFilters(filters []string) (*zep.DateFilters, error) {
+	result := &zep.DateFilters{}
+	for _, filter := range filters {
+		parsed, err := parseDateFilter(filter)
+		if err != nil {
+			return nil, err
+		}
+		result.AnyOf = append(result.AnyOf, &zep.DateFilterGroup{AllOf: []*zep.DateFilter{parsed}})
+	}
+	return result, nil
+}
+
+func parseDateFilter(filter string) (*zep.DateFilter, error) {
+	var field string
+	var operator zep.DateFilterOperator
+	var rawValue string
+	for _, nullOperator := range []string{"IS NOT NULL", "IS NULL"} {
+		if !strings.Contains(filter, ":"+nullOperator) {
+			continue
+		}
+		parts := strings.SplitN(filter, ":"+nullOperator, 2)
+		field = strings.TrimSpace(parts[0])
+		if field == "" || strings.TrimSpace(parts[1]) != "" {
+			return nil, fmt.Errorf("invalid date filter format: %q", filter)
+		}
+		operator = zep.DateFilterOperator(strings.ToLower(strings.ReplaceAll(nullOperator, " ", "_")))
+		break
+	}
+	if operator == "" {
+		parts := strings.SplitN(filter, ":", 3)
+		if len(parts) != 3 || strings.TrimSpace(parts[0]) == "" {
+			return nil, fmt.Errorf("invalid date filter format: %q (expected field:operator:date)", filter)
+		}
+		field = strings.TrimSpace(parts[0])
+		parsedOperator, err := parseSearchComparisonOperator(parts[1])
+		if err != nil {
+			return nil, fmt.Errorf("invalid operator in date filter %q: %w", filter, err)
+		}
+		operator = zep.DateFilterOperator(parsedOperator)
+		rawValue = strings.TrimSpace(parts[2])
+	}
+
+	dateField, err := zep.NewDateFilterFieldFromString(field)
+	if err != nil {
+		return nil, fmt.Errorf("invalid date filter field in %q: %w", filter, err)
+	}
+	result := &zep.DateFilter{Field: dateField.Ptr(), Operator: operator.Ptr()}
+	if rawValue != "" {
+		value, err := time.Parse(time.RFC3339, rawValue)
+		if err != nil {
+			value, err = time.Parse("2006-01-02", rawValue)
+			if err != nil {
+				return nil, fmt.Errorf("invalid date in filter %q: %w", filter, err)
+			}
+		}
+		result.Value = &value
+	}
+	return result, nil
 }

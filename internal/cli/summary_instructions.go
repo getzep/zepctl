@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/getzep/zep-go/v3"
+	"github.com/getzep/zep-go/v4"
 	"github.com/getzep/zepctl/internal/client"
 	"github.com/getzep/zepctl/internal/output"
 	"github.com/spf13/cobra"
@@ -26,19 +26,14 @@ var summaryInstructionsListCmd = &cobra.Command{
 	Use:   listCmdUse,
 	Short: "List summary instructions",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		userID, _ := cmd.Flags().GetString("user")
+		userUUID, _ := cmd.Flags().GetString("user")
 
 		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
 
-		req := &zep.UserListUserSummaryInstructionsRequest{}
-		if userID != "" {
-			req.UserID = zep.String(userID)
-		}
-
-		result, err := c.User.ListUserSummaryInstructions(context.Background(), req)
+		result, err := getSummaryInstructions(c, userUUID)
 		if err != nil {
 			return fmt.Errorf("listing summary instructions: %w", err)
 		}
@@ -68,7 +63,7 @@ var summaryInstructionsAddCmd = &cobra.Command{
 		name, _ := cmd.Flags().GetString("name")
 		instruction, _ := cmd.Flags().GetString("instruction")
 		file, _ := cmd.Flags().GetString("file")
-		userIDs, _ := cmd.Flags().GetString("user")
+		userUUID, _ := cmd.Flags().GetString("user")
 
 		if name == "" {
 			return fmt.Errorf("--name is required")
@@ -96,28 +91,31 @@ var summaryInstructionsAddCmd = &cobra.Command{
 			return err
 		}
 
-		req := &zep.AddUserInstructionsRequest{
-			Instructions: []*zep.UserInstruction{
-				{
-					Name: name,
-					Text: instructionText,
-				},
-			},
+		existing, err := getSummaryInstructions(c, userUUID)
+		if err != nil {
+			return fmt.Errorf("getting summary instructions: %w", err)
 		}
-
-		if userIDs != "" {
-			req.UserIDs = strings.Split(userIDs, ",")
+		instructions := existing.Instructions
+		replaced := false
+		for i, current := range instructions {
+			if current.Name == name {
+				instructions[i] = &zep.UserInstruction{Name: name, Text: instructionText}
+				replaced = true
+				break
+			}
 		}
-
-		result, err := c.User.AddUserSummaryInstructions(context.Background(), req)
+		if !replaced {
+			instructions = append(instructions, &zep.UserInstruction{Name: name, Text: instructionText})
+		}
+		result, err := setSummaryInstructions(c, userUUID, instructions)
 		if err != nil {
 			return fmt.Errorf("adding summary instruction: %w", err)
 		}
 
 		if output.GetFormat() == output.FormatTable {
 			scope := "project-wide"
-			if userIDs != "" {
-				scope = fmt.Sprintf("user(s): %s", userIDs)
+			if userUUID != "" {
+				scope = fmt.Sprintf("user: %s", userUUID)
 			}
 			output.Info("Added summary instruction %q (%s)", name, scope)
 			return nil
@@ -134,7 +132,7 @@ var summaryInstructionsDeleteCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		force, _ := cmd.Flags().GetBool("force")
-		userIDs, _ := cmd.Flags().GetString("user")
+		userUUID, _ := cmd.Flags().GetString("user")
 
 		if !force {
 			fmt.Printf("Delete summary instruction %q? [y/N]: ", name)
@@ -149,25 +147,48 @@ var summaryInstructionsDeleteCmd = &cobra.Command{
 			return err
 		}
 
-		req := &zep.DeleteUserInstructionsRequest{
-			InstructionNames: []string{name},
+		existing, err := getSummaryInstructions(c, userUUID)
+		if err != nil {
+			return fmt.Errorf("getting summary instructions: %w", err)
 		}
-
-		if userIDs != "" {
-			req.UserIDs = strings.Split(userIDs, ",")
+		instructions := make([]*zep.UserInstruction, 0, len(existing.Instructions))
+		found := false
+		for _, current := range existing.Instructions {
+			if current.Name == name {
+				found = true
+				continue
+			}
+			instructions = append(instructions, current)
 		}
-
-		if _, err := c.User.DeleteUserSummaryInstructions(context.Background(), req); err != nil {
+		if !found {
+			return fmt.Errorf("summary instruction %q was not found", name)
+		}
+		if _, err := setSummaryInstructions(c, userUUID, instructions); err != nil {
 			return fmt.Errorf("deleting summary instruction: %w", err)
 		}
 
 		scope := "project-wide"
-		if userIDs != "" {
-			scope = fmt.Sprintf("user(s): %s", userIDs)
+		if userUUID != "" {
+			scope = fmt.Sprintf("user: %s", userUUID)
 		}
 		output.Info("Deleted summary instruction %q (%s)", name, scope)
 		return nil
 	},
+}
+
+func getSummaryInstructions(c *client.Client, userUUID string) (*zep.UserSummaryInstructions, error) {
+	if userUUID != "" {
+		return c.User.GetSummaryInstructions(context.Background(), userUUID)
+	}
+	return c.Project.GetUserSummaryInstructions(context.Background())
+}
+
+func setSummaryInstructions(c *client.Client, userUUID string, instructions []*zep.UserInstruction) (*zep.UserSummaryInstructions, error) {
+	request := &zep.UserSummaryInstructions{Instructions: instructions}
+	if userUUID != "" {
+		return c.User.SetSummaryInstructions(context.Background(), userUUID, request)
+	}
+	return c.Project.SetUserSummaryInstructions(context.Background(), request)
 }
 
 func init() {
@@ -177,15 +198,15 @@ func init() {
 	summaryInstructionsCmd.AddCommand(summaryInstructionsDeleteCmd)
 
 	// List flags
-	summaryInstructionsListCmd.Flags().String("user", "", "Filter by user ID")
+	summaryInstructionsListCmd.Flags().String("user", "", "User UUID")
 
 	// Add flags
 	summaryInstructionsAddCmd.Flags().String("name", "", "Instruction name (unique identifier)")
 	summaryInstructionsAddCmd.Flags().String("instruction", "", "Instruction text (max 100 chars)")
 	summaryInstructionsAddCmd.Flags().String("file", "", "Path to file containing instruction text")
-	summaryInstructionsAddCmd.Flags().String("user", "", "Apply to specific user(s) (comma-separated)")
+	summaryInstructionsAddCmd.Flags().String("user", "", "User UUID")
 
 	// Delete flags
 	summaryInstructionsDeleteCmd.Flags().Bool("force", false, "Skip confirmation prompt")
-	summaryInstructionsDeleteCmd.Flags().String("user", "", "Delete from specific user(s) (comma-separated)")
+	summaryInstructionsDeleteCmd.Flags().String("user", "", "User UUID")
 }

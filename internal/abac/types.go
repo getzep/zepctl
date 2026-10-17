@@ -27,7 +27,7 @@ type PolicySetSummary struct {
 	Version int    `json:"version"`
 }
 
-// PolicySetList is the response for GET /api/v2/abac/policy-sets.
+// PolicySetList is the response for GET /api/v4/abac/policy-sets.
 type PolicySetList struct {
 	PolicySets []PolicySetSummary `json:"policy_sets"`
 }
@@ -96,7 +96,7 @@ type Resource struct {
 	UUID string `json:"uuid"`
 }
 
-// EvaluateResponse is the response from POST /api/v2/abac/policies/evaluate.
+// EvaluateResponse is the response from POST /api/v4/abac/policies/evaluate.
 //
 // RawJSON is the unmodified server response body. Table output uses the
 // typed fields; JSON/YAML output prints RawJSON verbatim so any
@@ -119,7 +119,7 @@ type EvaluateResponse struct {
 	RawJSON              json.RawMessage `json:"-"`
 }
 
-// ExplainResponse is the response from POST /api/v2/abac/policies/explain.
+// ExplainResponse is the response from POST /api/v4/abac/policies/explain.
 //
 // The trace is documentation-shaped and forward-compatible: unknown fields
 // inside the trace are preserved in RawJSON and surfaced in JSON/YAML
@@ -204,75 +204,10 @@ type ExplainConstraintGroup struct {
 	SubsetMatch bool             `json:"subset_match"`
 }
 
-// UserGroup is a project-scoped UserGroup. Kind is "managed" or
-// "virtual"; the virtual All Users group has a null version and null
-// timestamps.
-type UserGroup struct {
-	UUID                string  `json:"uuid"`
-	ProjectUUID         string  `json:"project_uuid"`
-	Name                string  `json:"name"`
-	Description         string  `json:"description,omitempty"`
-	Kind                string  `json:"kind"`
-	MemberCount         int     `json:"member_count"`
-	AttachedPolicyCount int     `json:"attached_policy_set_count"`
-	Version             *int    `json:"version"`
-	CreatedAt           *string `json:"created_at"`
-	UpdatedAt           *string `json:"updated_at"`
-}
-
-// UserGroupQuota is the managed-group allocation state returned with
-// list responses so callers do not infer plan limits themselves.
-type UserGroupQuota struct {
-	ActiveManaged int  `json:"active_managed"`
-	Allocation    int  `json:"allocation"`
-	HasFeature    bool `json:"has_feature"`
-	Unlimited     bool `json:"unlimited"`
-	Resolved      bool `json:"resolved"`
-}
-
-// UserGroupList is the response for GET /api/v2/user-groups.
-type UserGroupList struct {
-	UserGroups []UserGroup    `json:"user_groups"`
-	TotalCount int            `json:"total_count"`
-	RowCount   int            `json:"row_count"`
-	Quota      UserGroupQuota `json:"quota"`
-}
-
-// UserGroupsForUser is the response for
-// GET /api/v2/user-groups/users/{user_uuid}: All Users plus every active
-// managed membership.
-type UserGroupsForUser struct {
-	UserGroups []UserGroup `json:"user_groups"`
-}
-
-// GroupMember is a User in a member or candidate list. It carries only
-// the identity fields the CLI renders.
-type GroupMember struct {
-	UUID      string `json:"uuid"`
-	UserID    string `json:"user_id"`
-	Email     string `json:"email,omitempty"`
-	FirstName string `json:"first_name,omitempty"`
-	LastName  string `json:"last_name,omitempty"`
-}
-
-// GroupMembers is the response for the member and candidate endpoints.
-type GroupMembers struct {
-	Users      []GroupMember `json:"users"`
-	TotalCount int           `json:"total_count"`
-	RowCount   int           `json:"row_count"`
-}
-
-// MembershipResult is the response for membership mutations. Duplicate
-// adds and removals of an absent membership are counted as no-ops.
-type MembershipResult struct {
-	Added   int `json:"added_count,omitempty"`
-	Removed int `json:"removed_count,omitempty"`
-	NoOp    int `json:"no_op_count"`
-}
-
 // APIError is returned when the ABAC API returns a non-2xx response.
 type APIError struct {
 	StatusCode int
+	Code       string
 	Message    string
 }
 

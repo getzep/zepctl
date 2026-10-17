@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/getzep/zep-go/v3"
+	"github.com/getzep/zep-go/v4"
+	zepgraph "github.com/getzep/zep-go/v4/graph"
 	"github.com/getzep/zepctl/internal/client"
 	"github.com/getzep/zepctl/internal/output"
 	"github.com/spf13/cobra"
@@ -28,47 +29,44 @@ var threadSummaryListCmd = &cobra.Command{
 		if userID == "" && graphID == "" {
 			return fmt.Errorf("either --user or --graph is required")
 		}
+		if userID != "" && graphID != "" {
+			return fmt.Errorf("--user and --graph are mutually exclusive")
+		}
 
 		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
 
-		req := &zep.GraphThreadSummariesRequest{}
+		req := &zepgraph.ThreadSummaryListRequest{}
 		if limit > 0 {
-			req.Limit = zep.Int(limit)
+			req.PageSize = zep.Int(limit)
 		}
 		if cursor != "" {
-			req.UUIDCursor = zep.String(cursor)
+			req.Cursor = zep.String(cursor)
 		}
 
-		var summaries []*zep.ThreadSummary
-
+		graphUUID := graphID
 		if userID != "" {
-			result, err := c.Graph.ThreadSummary.GetByUserID(context.Background(), userID, req)
-			if err != nil {
-				return fmt.Errorf("listing thread summaries: %w", err)
-			}
-			summaries = result
-		} else {
-			result, err := c.Graph.ThreadSummary.GetByGraphID(context.Background(), graphID, req)
-			if err != nil {
-				return fmt.Errorf("listing thread summaries: %w", err)
-			}
-			summaries = result
+			graphUUID = userID
 		}
+		page, err := c.Graph.ThreadSummary.List(context.Background(), graphUUID, req)
+		if err != nil {
+			return fmt.Errorf("listing thread summaries: %w", err)
+		}
+		summaries := page.Results
 
 		if output.GetFormat() == output.FormatTable {
-			tbl := output.NewTable("UUID", "THREAD ID", "SUMMARY", "LAST SUMMARIZED AT")
+			tbl := output.NewTable("UUID", "THREAD UUID", "SUMMARY", "LAST SUMMARIZED AT")
 			tbl.WriteHeader()
 			for _, s := range summaries {
 				uuid := ""
 				if s.UUID != nil {
 					uuid = *s.UUID
 				}
-				threadID := ""
-				if s.ThreadID != nil {
-					threadID = *s.ThreadID
+				threadUUID := ""
+				if s.ThreadUUID != nil {
+					threadUUID = *s.ThreadUUID
 				}
 				summary := ""
 				if s.Summary != nil {
@@ -81,12 +79,13 @@ var threadSummaryListCmd = &cobra.Command{
 				if s.LastSummarizedAt != nil {
 					lastSummarizedAt = *s.LastSummarizedAt
 				}
-				tbl.WriteRow(uuid, threadID, summary, lastSummarizedAt)
+				tbl.WriteRow(uuid, threadUUID, summary, lastSummarizedAt)
 			}
+			writeNextCursor(page.RawResponse.Next)
 			return tbl.Flush()
 		}
 
-		return output.Print(summaries)
+		return output.Print(map[string]any{"items": summaries, "next_cursor": page.RawResponse.Next})
 	},
 }
 
@@ -94,8 +93,8 @@ func init() {
 	rootCmd.AddCommand(threadSummaryCmd)
 	threadSummaryCmd.AddCommand(threadSummaryListCmd)
 
-	threadSummaryListCmd.Flags().String("user", "", "List thread summaries for user graph")
-	threadSummaryListCmd.Flags().String("graph", "", "List thread summaries for standalone graph")
+	threadSummaryListCmd.Flags().String("user", "", "User UUID for a user graph")
+	threadSummaryListCmd.Flags().String("graph", "", "Graph UUID for a standalone graph")
 	threadSummaryListCmd.Flags().Int("limit", 50, "Maximum number of results to return")
 	threadSummaryListCmd.Flags().String("cursor", "", "UUID cursor for pagination (last UUID from previous page)")
 }

@@ -3,9 +3,10 @@ module github.com/getzep/zepctl
 go 1.25.5
 
 require (
-	github.com/getzep/zep-go/v3 v3.21.0
+	github.com/getzep/zep-go/v4 v4.0.0
 	github.com/google/uuid v1.6.0
 	github.com/spf13/cobra v1.8.1
+	github.com/spf13/pflag v1.0.5
 	github.com/spf13/viper v1.19.0
 	github.com/stretchr/testify v1.10.0
 	github.com/zalando/go-keyring v0.2.6
@@ -31,7 +32,6 @@ require (
 	github.com/sourcegraph/conc v0.3.0 // indirect
 	github.com/spf13/afero v1.11.0 // indirect
 	github.com/spf13/cast v1.6.0 // indirect
-	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/exp v0.0.0-20250718183923-645b1fa84792 // indirect
