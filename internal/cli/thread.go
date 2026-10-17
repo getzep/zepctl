@@ -133,10 +133,14 @@ var threadGetCmd = &cobra.Command{
 		req := &zep.ThreadListMessagesRequest{}
 		if lastN > 0 {
 			req.PageSize = zep.Int(lastN)
+			req.Order = zep.ThreadListMessagesRequestOrderDesc.Ptr()
 		}
 		resp, err := c.Thread.ListMessages(context.Background(), threadUUID, req)
 		if err != nil {
 			return fmt.Errorf("getting thread: %w", err)
+		}
+		if lastN > 0 {
+			reverseThreadMessages(resp.Results)
 		}
 
 		if output.GetFormat() == output.FormatTable {
@@ -199,13 +203,7 @@ var threadDeleteCmd = &cobra.Command{
 
 		wait, _ := cmd.Flags().GetBool("wait")
 		timeout, _ := cmd.Flags().GetDuration("timeout")
-		if result.Task != nil && result.Task.UUID != nil {
-			output.Info("Deletion task: %s", *result.Task.UUID)
-			if wait {
-				return waitForTask(c, *result.Task.UUID, timeout, defaultTaskPollInterval)
-			}
-		}
-		return nil
+		return reportDeletion(c, "thread", threadUUID, result.Task, wait, timeout)
 	},
 }
 
@@ -227,6 +225,7 @@ var threadMessagesCmd = &cobra.Command{
 		req := &zep.ThreadListMessagesRequest{}
 		if lastN > 0 {
 			req.PageSize = zep.Int(lastN)
+			req.Order = zep.ThreadListMessagesRequestOrderDesc.Ptr()
 		} else if limit > 0 {
 			req.PageSize = zep.Int(limit)
 		}
@@ -237,6 +236,9 @@ var threadMessagesCmd = &cobra.Command{
 		messages, err := c.Thread.ListMessages(context.Background(), threadUUID, req)
 		if err != nil {
 			return fmt.Errorf("getting thread messages: %w", err)
+		}
+		if lastN > 0 {
+			reverseThreadMessages(messages.Results)
 		}
 
 		if output.GetFormat() == output.FormatTable {
@@ -270,6 +272,12 @@ var threadMessagesCmd = &cobra.Command{
 
 		return output.Print(map[string]any{"items": messages.Results, "next_cursor": messages.RawResponse.Next})
 	},
+}
+
+func reverseThreadMessages(messages []*zep.Message) {
+	for left, right := 0, len(messages)-1; left < right; left, right = left+1, right-1 {
+		messages[left], messages[right] = messages[right], messages[left]
+	}
 }
 
 // MessageInput represents the input format for adding messages.

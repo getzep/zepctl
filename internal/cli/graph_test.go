@@ -7,10 +7,95 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	zep "github.com/getzep/zep-go/v4"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/require"
 )
+
+func TestParsePropertyFilter(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		property  string
+		operator  zep.PropertyFilterOperator
+		value     string
+		wantError bool
+	}{
+		{name: "string", input: "status:=:active", property: "status", operator: zep.PropertyFilterOperatorEq, value: "active"},
+		{name: "number", input: "count:>=:3", property: "count", operator: zep.PropertyFilterOperatorGte, value: "3"},
+		{name: "boolean", input: "enabled:=:true", property: "enabled", operator: zep.PropertyFilterOperatorEq, value: "true"},
+		{name: "null", input: "status:IS NULL", property: "status", operator: zep.PropertyFilterOperatorIsNull},
+		{name: "invalid format", input: "status", wantError: true},
+		{name: "invalid operator", input: "status:LIKE:active", wantError: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			filter, err := parsePropertyFilter(test.input)
+			if test.wantError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, test.property, *filter.PropertyName)
+			require.Equal(t, test.operator, *filter.Operator)
+			if test.operator == zep.PropertyFilterOperatorIsNull {
+				require.Nil(t, filter.Value)
+				return
+			}
+			require.NotNil(t, filter.Value)
+			switch test.value {
+			case "active":
+				require.Equal(t, test.value, filter.Value.GetString())
+			case "3":
+				require.Equal(t, 3.0, filter.Value.GetDouble())
+			case "true":
+				require.True(t, filter.Value.GetBoolean())
+			}
+		})
+	}
+}
+
+func TestParseDateFilter(t *testing.T) {
+	filter, err := parseDateFilter("created_at:>=:2024-01-01")
+	require.NoError(t, err)
+	require.Equal(t, zep.DateFilterFieldCreatedAt, *filter.Field)
+	require.Equal(t, zep.DateFilterOperatorGte, *filter.Operator)
+	require.NotNil(t, filter.Value)
+	require.Equal(t, "2024-01-01T00:00:00Z", filter.Value.Format("2006-01-02T15:04:05Z07:00"))
+
+	nullFilter, err := parseDateFilter("valid_at:IS NULL")
+	require.NoError(t, err)
+	require.Equal(t, zep.DateFilterFieldValidAt, *nullFilter.Field)
+	require.Equal(t, zep.DateFilterOperatorIsNull, *nullFilter.Operator)
+	require.Nil(t, nullFilter.Value)
+
+	_, err = parseDateFilter("unknown_field:>:2024-01-01")
+	require.Error(t, err)
+}
+
+func TestParseComparisonOperator(t *testing.T) {
+	tests := []struct {
+		input string
+		want  zep.PropertyFilterOperator
+	}{
+		{input: "=", want: zep.PropertyFilterOperatorEq},
+		{input: "==", want: zep.PropertyFilterOperatorEq},
+		{input: "<>", want: zep.PropertyFilterOperatorNe},
+		{input: "!=", want: zep.PropertyFilterOperatorNe},
+		{input: ">", want: zep.PropertyFilterOperatorGt},
+		{input: "<", want: zep.PropertyFilterOperatorLt},
+		{input: ">=", want: zep.PropertyFilterOperatorGte},
+		{input: "<=", want: zep.PropertyFilterOperatorLte},
+	}
+	for _, test := range tests {
+		operator, err := parseSearchComparisonOperator(test.input)
+		require.NoError(t, err)
+		require.Equal(t, test.want, operator)
+	}
+	_, err := parseSearchComparisonOperator("LIKE")
+	require.Error(t, err)
+}
 
 func TestGraphSearchUsesV4ScopeEndpoints(t *testing.T) {
 	tests := []struct {

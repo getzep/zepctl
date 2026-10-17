@@ -116,6 +116,23 @@ func waitForTask(c *client.Client, taskUUID string, timeout, pollInterval time.D
 	)
 }
 
+func reportDeletion(c *client.Client, resource, resourceUUID string, task *zep.Task, wait bool, timeout time.Duration) error {
+	if task == nil || task.UUID == nil || *task.UUID == "" {
+		output.Info("Deleted %s %s", resource, resourceUUID)
+		return nil
+	}
+	if !wait {
+		output.Info("Deletion of %s %s started; task %s", resource, resourceUUID, *task.UUID)
+		return nil
+	}
+	output.Info("Deletion task: %s", *task.UUID)
+	if err := waitForTask(c, *task.UUID, timeout, defaultTaskPollInterval); err != nil {
+		return err
+	}
+	output.Info("Deleted %s %s", resource, resourceUUID)
+	return nil
+}
+
 func waitForTaskWith(
 	taskUUID string,
 	timeout, pollInterval time.Duration,

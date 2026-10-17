@@ -97,7 +97,7 @@ func GetCredentials(profile string) (*Credentials, error) {
 
 // SetCredentials stores structured credentials for a profile.
 func SetCredentials(profile string, creds *Credentials) error {
-	data, err := json.Marshal(creds)
+	data, err := json.Marshal(creds) //nolint:gosec // G117: intentionally marshaling credentials for keychain storage
 	if err != nil {
 		return fmt.Errorf("marshaling credentials: %w", err)
 	}

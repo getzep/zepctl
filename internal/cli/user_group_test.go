@@ -17,7 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestUserGroupCommandsRequireBearerCredentials(t *testing.T) {
+func TestUserGroupCommands_CredentialType(t *testing.T) {
 	commands := map[string]*cobra.Command{
 		"list":               userGroupListCmd,
 		"get":                userGroupGetCmd,
@@ -43,6 +43,43 @@ func TestUserGroupCommandsRequireBearerCredentials(t *testing.T) {
 			assert.Equal(t, "bearer", command.Annotations["zepctl_credential_type"])
 		})
 	}
+}
+
+func setFlags(t *testing.T, cmd *cobra.Command, values map[string]string) {
+	t.Helper()
+	for name, value := range values {
+		flag := cmd.Flags().Lookup(name)
+		require.NotNil(t, flag, "unknown flag %q", name)
+		require.NoError(t, flag.Value.Set(value))
+		flag.Changed = true
+		t.Cleanup(func() {
+			require.NoError(t, flag.Value.Set(flag.DefValue))
+			flag.Changed = false
+		})
+	}
+}
+
+func configureBearerSDKTestServer(t *testing.T, server *httptest.Server) {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	t.Cleanup(func() { _, _ = config.Reload() })
+	configDir := filepath.Join(home, ".zepctl")
+	require.NoError(t, os.MkdirAll(configDir, 0o700))
+	configText := fmt.Sprintf(
+		"current-profile: user-group-sdk-test\nprofiles:\n  - name: user-group-sdk-test\n    api-url: %s\n    project-uuid: project-test\n    account-uuid: account-test\n",
+		server.URL,
+	)
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(configText), 0o600))
+	_, err := config.Reload()
+	require.NoError(t, err)
+	require.NoError(t, keyring.SetCredentials("user-group-sdk-test", &keyring.Credentials{
+		AccessToken: "test-access-token",
+		ExpiresAt:   time.Now().Add(time.Hour).Format(time.RFC3339),
+	}))
+	t.Cleanup(func() { _ = keyring.Delete("user-group-sdk-test") })
 }
 
 func TestUserGroupGet_UsesBearerSDKClient(t *testing.T) {

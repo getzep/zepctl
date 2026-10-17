@@ -294,13 +294,7 @@ var userDeleteCmd = &cobra.Command{
 
 		wait, _ := cmd.Flags().GetBool("wait")
 		timeout, _ := cmd.Flags().GetDuration("timeout")
-		if result.Task != nil && result.Task.UUID != nil {
-			output.Info("Deletion task: %s", *result.Task.UUID)
-			if wait {
-				return waitForTask(c, *result.Task.UUID, timeout, defaultTaskPollInterval)
-			}
-		}
-		return nil
+		return reportDeletion(c, "user", userUUID, result.Task, wait, timeout)
 	},
 }
 
