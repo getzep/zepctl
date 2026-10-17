@@ -117,7 +117,7 @@ func NewWithCredential(ctx context.Context, credType CredentialType) (*Client, e
 }
 
 // sdkAPIVersionPathRE matches an /api/vN segment anywhere in a URL path.
-var sdkAPIVersionPathRE = regexp.MustCompile(`(?i)/api/v\d+(?:/|$)`)
+var sdkAPIVersionPathRE = regexp.MustCompile(`(?i)/api/v\d+(/|$)`)
 
 // normalizeSDKBaseURL rewrites an explicit API version to /api/v4 or appends
 // /api/v4 when the URL has no API version.
@@ -127,7 +127,7 @@ func normalizeSDKBaseURL(raw string) string {
 	}
 	trimmed := strings.TrimRight(raw, "/")
 	if sdkAPIVersionPathRE.MatchString(trimmed) {
-		return sdkAPIVersionPathRE.ReplaceAllString(trimmed, "/api/v4")
+		return sdkAPIVersionPathRE.ReplaceAllString(trimmed, `/api/v4${1}`)
 	}
 	return trimmed + "/api/v4"
 }

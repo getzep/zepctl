@@ -85,7 +85,7 @@ var graphListCmd = &cobra.Command{
 			return tbl.Flush()
 		}
 
-		return output.Print(map[string]any{"items": graphs.Results, "next_cursor": graphs.RawResponse.Next})
+		return output.Print(map[string]any{itemsOutputKey: graphs.Results, "next_cursor": graphs.RawResponse.Next})
 	},
 }
 
@@ -188,7 +188,9 @@ var graphCloneCmd = &cobra.Command{
 		if resp.Task != nil && resp.Task.UUID != nil {
 			output.Info("Clone task: %s", *resp.Task.UUID)
 			if wait {
-				return waitForTask(c, *resp.Task.UUID, timeout, defaultTaskPollInterval)
+				if err := waitForTask(c, *resp.Task.UUID, timeout, defaultTaskPollInterval); err != nil {
+					return err
+				}
 			}
 		}
 
@@ -534,6 +536,9 @@ var graphSearchCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("getting graph context: %w", err)
 			}
+			if output.GetFormat() == output.FormatTable {
+				return printGraphSearchContext(resp.Context)
+			}
 			return output.Print(resp)
 		}
 
@@ -575,7 +580,17 @@ var graphSearchCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("searching edges: %w", err)
 			}
-			return output.Print(map[string]any{"items": page.Results, "next_cursor": page.RawResponse.Next})
+			if output.GetFormat() == output.FormatTable {
+				return printGraphSearchTable(page.Results, page.RawResponse.Next, []string{"UUID", "FACT", "VALID AT", "INVALID AT"}, func(edge *zep.Edge) []string {
+					return []string{
+						valueOrEmpty(edge.UUID),
+						valueOrEmpty(edge.Fact),
+						valueOrEmpty(edge.ValidAt),
+						valueOrEmpty(edge.InvalidAt),
+					}
+				})
+			}
+			return output.Print(map[string]any{itemsOutputKey: page.Results, "next_cursor": page.RawResponse.Next})
 		}
 		if scope == "nodes" {
 			req := &zep.SearchNodesRequest{Query: query, PageSize: zep.Int(limit)}
@@ -609,7 +624,16 @@ var graphSearchCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("searching nodes: %w", err)
 			}
-			return output.Print(map[string]any{"items": page.Results, "next_cursor": page.RawResponse.Next})
+			if output.GetFormat() == output.FormatTable {
+				return printGraphSearchTable(page.Results, page.RawResponse.Next, []string{"UUID", "NAME", "SUMMARY"}, func(node *zep.Node) []string {
+					return []string{
+						valueOrEmpty(node.UUID),
+						valueOrEmpty(node.Name),
+						truncateGraphSearchValue(valueOrEmpty(node.Summary), 50),
+					}
+				})
+			}
+			return output.Print(map[string]any{itemsOutputKey: page.Results, "next_cursor": page.RawResponse.Next})
 		}
 		if scope == "episodes" {
 			req := &zep.SearchEpisodesRequest{Query: query, PageSize: zep.Int(limit)}
@@ -627,7 +651,18 @@ var graphSearchCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("searching episodes: %w", err)
 			}
-			return output.Print(map[string]any{"items": page.Results, "next_cursor": page.RawResponse.Next})
+			if output.GetFormat() == output.FormatTable {
+				return printGraphSearchTable(page.Results, page.RawResponse.Next, []string{"UUID", "SOURCE", "ROLE", "CONTENT", "CREATED AT"}, func(episode *zep.Episode) []string {
+					return []string{
+						valueOrEmpty(episode.UUID),
+						valueOrEmpty(episode.Source),
+						valueOrEmpty(episode.Role),
+						truncateGraphSearchValue(valueOrEmpty(episode.Content), 40),
+						valueOrEmpty(episode.CreatedAt),
+					}
+				})
+			}
+			return output.Print(map[string]any{itemsOutputKey: page.Results, "next_cursor": page.RawResponse.Next})
 		}
 		if scope == "observations" {
 			req := &zep.SearchObservationsRequest{Query: query, PageSize: zep.Int(limit)}
@@ -645,7 +680,18 @@ var graphSearchCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("searching observations: %w", err)
 			}
-			return output.Print(map[string]any{"items": page.Results, "next_cursor": page.RawResponse.Next})
+			if output.GetFormat() == output.FormatTable {
+				return printGraphSearchTable(page.Results, page.RawResponse.Next, []string{"UUID", "NAME", "LABELS", "SUMMARY", "CREATED AT"}, func(observation *zep.Observation) []string {
+					return []string{
+						valueOrEmpty(observation.UUID),
+						valueOrEmpty(observation.Name),
+						strings.Join(observation.Labels, ","),
+						truncateGraphSearchValue(valueOrEmpty(observation.Summary), 40),
+						valueOrEmpty(observation.CreatedAt),
+					}
+				})
+			}
+			return output.Print(map[string]any{itemsOutputKey: page.Results, "next_cursor": page.RawResponse.Next})
 		}
 		req := &zep.SearchThreadSummariesRequest{Query: query, PageSize: zep.Int(limit)}
 		if cursor != "" {
@@ -662,7 +708,17 @@ var graphSearchCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("searching thread summaries: %w", err)
 		}
-		return output.Print(map[string]any{"items": page.Results, "next_cursor": page.RawResponse.Next})
+		if output.GetFormat() == output.FormatTable {
+			return printGraphSearchTable(page.Results, page.RawResponse.Next, []string{"UUID", "THREAD UUID", "SUMMARY", "LAST SUMMARIZED AT"}, func(summary *zep.ThreadSummary) []string {
+				return []string{
+					valueOrEmpty(summary.UUID),
+					valueOrEmpty(summary.ThreadUUID),
+					truncateGraphSearchValue(valueOrEmpty(summary.Summary), 50),
+					valueOrEmpty(summary.LastSummarizedAt),
+				}
+			})
+		}
+		return output.Print(map[string]any{itemsOutputKey: page.Results, "next_cursor": page.RawResponse.Next})
 	},
 }
 
@@ -686,6 +742,28 @@ func valueOrEmpty[T ~string](value *T) string {
 		return ""
 	}
 	return string(*value)
+}
+
+func printGraphSearchTable[T any](results []T, cursor *string, headers []string, row func(T) []string) error {
+	table := output.NewTable(headers...)
+	table.WriteHeader()
+	for _, result := range results {
+		table.WriteRow(row(result)...)
+	}
+	writeNextCursor(cursor)
+	return table.Flush()
+}
+
+func printGraphSearchContext(contextText *string) error {
+	_, err := fmt.Println(valueOrEmpty(contextText))
+	return err
+}
+
+func truncateGraphSearchValue(value string, limit int) string {
+	if len(value) > limit {
+		return value[:limit] + "..."
+	}
+	return value
 }
 
 func writeNextCursor(cursor *string) {

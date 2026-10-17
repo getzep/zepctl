@@ -75,7 +75,7 @@ var nodeListCmd = &cobra.Command{
 			return tbl.Flush()
 		}
 
-		return output.Print(map[string]any{"items": nodes.Results, "next_cursor": nodes.RawResponse.Next})
+		return output.Print(map[string]any{itemsOutputKey: nodes.Results, "next_cursor": nodes.RawResponse.Next})
 	},
 }
 
@@ -162,7 +162,7 @@ var nodeEdgesCmd = &cobra.Command{
 			return tbl.Flush()
 		}
 
-		return output.Print(map[string]any{"items": edges.Results, "next_cursor": edges.RawResponse.Next})
+		return output.Print(map[string]any{itemsOutputKey: edges.Results, "next_cursor": edges.RawResponse.Next})
 	},
 }
 
@@ -215,7 +215,7 @@ var nodeEpisodesCmd = &cobra.Command{
 			return tbl.Flush()
 		}
 
-		return output.Print(map[string]any{"items": episodes.Results, "next_cursor": episodes.RawResponse.Next})
+		return output.Print(map[string]any{itemsOutputKey: episodes.Results, "next_cursor": episodes.RawResponse.Next})
 	},
 }
 

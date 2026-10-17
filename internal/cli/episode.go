@@ -80,7 +80,7 @@ var episodeListCmd = &cobra.Command{
 			return tbl.Flush()
 		}
 
-		return output.Print(map[string]any{"items": episodes, "next_cursor": episodePage.RawResponse.Next})
+		return output.Print(map[string]any{itemsOutputKey: episodes, "next_cursor": episodePage.RawResponse.Next})
 	},
 }
 
@@ -130,7 +130,7 @@ var episodeGetCmd = &cobra.Command{
 var episodeMentionsCmd = &cobra.Command{
 	Use:   "mentions <episode-uuid>",
 	Short: "Get nodes and edges mentioned in an episode",
-	Long:  `Returns nodes and edges mentioned in the specified episode.`,
+	Long:  `Returns nodes and edges mentioned in the specified episode. Use a separate cursor for each list.`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		uuid := args[0]
@@ -145,7 +145,8 @@ var episodeMentionsCmd = &cobra.Command{
 		}
 
 		limit, _ := cmd.Flags().GetInt("limit")
-		cursor, _ := cmd.Flags().GetString("cursor")
+		nodesCursor, _ := cmd.Flags().GetString("nodes-cursor")
+		edgesCursor, _ := cmd.Flags().GetString("edges-cursor")
 		_, err = c.Graph.Episode.Get(context.Background(), graphUUID, uuid)
 		if err != nil {
 			return fmt.Errorf("getting episode: %w", err)
@@ -155,8 +156,8 @@ var episodeMentionsCmd = &cobra.Command{
 		if limit > 0 {
 			nodeRequest.PageSize = zep.Int(limit)
 		}
-		if cursor != "" {
-			nodeRequest.Cursor = zep.String(cursor)
+		if nodesCursor != "" {
+			nodeRequest.Cursor = zep.String(nodesCursor)
 		}
 		nodes, err := c.Graph.Node.List(context.Background(), graphUUID, nodeRequest)
 		if err != nil {
@@ -166,8 +167,8 @@ var episodeMentionsCmd = &cobra.Command{
 		if limit > 0 {
 			edgeRequest.PageSize = zep.Int(limit)
 		}
-		if cursor != "" {
-			edgeRequest.Cursor = zep.String(cursor)
+		if edgesCursor != "" {
+			edgeRequest.Cursor = zep.String(edgesCursor)
 		}
 		edges, err := c.Graph.Edge.List(context.Background(), graphUUID, edgeRequest)
 		if err != nil {
@@ -234,7 +235,8 @@ func init() {
 		command.Flags().String("graph", "", "Graph UUID for a standalone graph")
 	}
 	episodeMentionsCmd.Flags().Int("limit", 50, "Maximum number of results")
-	episodeMentionsCmd.Flags().String("cursor", "", "Cursor from the previous page")
+	episodeMentionsCmd.Flags().String("nodes-cursor", "", "Cursor for the node list")
+	episodeMentionsCmd.Flags().String("edges-cursor", "", "Cursor for the edge list")
 
 	// Delete flags
 	episodeDeleteCmd.Flags().Bool("force", false, "Skip confirmation prompt")

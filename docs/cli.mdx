@@ -471,11 +471,13 @@ zepctl episode list --graph <graph-uuid> [--last N] [--limit N] [--cursor CURSOR
 zepctl episode get <episode-uuid>
 
 # Get episode mentions
-zepctl episode mentions <episode-uuid> [--limit N] [--cursor CURSOR]
+zepctl episode mentions <episode-uuid> [--limit N] [--nodes-cursor CURSOR] [--edges-cursor CURSOR]
 
 # Delete an episode
 zepctl episode delete <episode-uuid> [--force] [--wait] [--timeout 5m]
 ```
+
+Use `--nodes-cursor` to page through node results. Use `--edges-cursor` to page through edge results.
 
 ### observation
 

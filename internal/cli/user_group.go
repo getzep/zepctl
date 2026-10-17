@@ -53,7 +53,7 @@ var userGroupListCmd = &cobra.Command{
 			}
 			return renderUserGroupTable(page.Results)
 		}
-		return output.Print(map[string]any{"items": page.Results, "next_cursor": page.RawResponse.Next})
+		return output.Print(map[string]any{itemsOutputKey: page.Results, "next_cursor": page.RawResponse.Next})
 	},
 }
 
@@ -392,7 +392,7 @@ func runMemberList(cmd *cobra.Command, groupUUID string, candidates bool) error 
 		}
 		return tbl.Flush()
 	}
-	return output.Print(map[string]any{"items": results, "next_cursor": nextCursor})
+	return output.Print(map[string]any{itemsOutputKey: results, "next_cursor": nextCursor})
 }
 
 func runMemberMutation(cmd *cobra.Command, args []string, add bool) error {

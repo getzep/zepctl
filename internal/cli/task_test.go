@@ -41,10 +41,16 @@ func TestWaitForTaskWith(t *testing.T) {
 			wantCalls: 1,
 		},
 		{
+			name:      "succeeded before short timeout",
+			tasks:     []*zep.Task{{Status: taskStatus(zep.TaskStatusSucceeded)}},
+			timeout:   time.Millisecond * 10,
+			wantCalls: 1,
+		},
+		{
 			name:      "timeout",
 			timeout:   time.Second,
 			wantErr:   "timeout waiting for task task-uuid",
-			wantCalls: 0,
+			wantCalls: 1,
 		},
 	}
 
@@ -54,6 +60,9 @@ func TestWaitForTaskWith(t *testing.T) {
 			calls := 0
 			getTask := func(context.Context, string) (*zep.Task, error) {
 				calls++
+				if calls > len(test.tasks) {
+					return nil, nil
+				}
 				return test.tasks[calls-1], nil
 			}
 			sleep := func(_ context.Context, duration time.Duration) error {

@@ -145,6 +145,21 @@ func waitForTaskWith(
 	deadline := now().Add(timeout)
 
 	for {
+		if !now().Before(deadline) {
+			return fmt.Errorf("timeout waiting for task %s", taskUUID)
+		}
+
+		task, err := getTask(ctx, taskUUID)
+		if err != nil {
+			return taskWaitOperationError(taskUUID, "getting", err, ctx)
+		}
+		if task != nil && task.Status != nil {
+			done, err := taskPollResult(taskUUID, task)
+			if done {
+				return err
+			}
+		}
+
 		remaining := deadline.Sub(now())
 		if remaining <= 0 {
 			return fmt.Errorf("timeout waiting for task %s", taskUUID)
@@ -155,22 +170,6 @@ func waitForTaskWith(
 		}
 		if err := sleep(ctx, sleepDuration); err != nil {
 			return taskWaitOperationError(taskUUID, "waiting", err, ctx)
-		}
-		if !now().Before(deadline) {
-			return fmt.Errorf("timeout waiting for task %s", taskUUID)
-		}
-
-		task, err := getTask(ctx, taskUUID)
-		if err != nil {
-			return taskWaitOperationError(taskUUID, "getting", err, ctx)
-		}
-		if task == nil || task.Status == nil {
-			continue
-		}
-
-		done, err := taskPollResult(taskUUID, task)
-		if done {
-			return err
 		}
 	}
 }

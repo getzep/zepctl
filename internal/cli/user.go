@@ -96,7 +96,7 @@ var userListCmd = &cobra.Command{
 			return tbl.Flush()
 		}
 
-		return output.Print(map[string]any{"items": users.Results, "next_cursor": users.RawResponse.Next})
+		return output.Print(map[string]any{itemsOutputKey: users.Results, "next_cursor": users.RawResponse.Next})
 	},
 }
 
@@ -346,7 +346,7 @@ var userThreadsCmd = &cobra.Command{
 			return tbl.Flush()
 		}
 
-		return output.Print(map[string]any{"items": threads.Results, "next_cursor": threads.RawResponse.Next})
+		return output.Print(map[string]any{itemsOutputKey: threads.Results, "next_cursor": threads.RawResponse.Next})
 	},
 }
 
@@ -406,7 +406,7 @@ var userMembershipsCmd = &cobra.Command{
 			}
 			return renderUserGroupTable(page.Results)
 		}
-		return output.Print(map[string]any{"items": page.Results, "next_cursor": page.RawResponse.Next})
+		return output.Print(map[string]any{itemsOutputKey: page.Results, "next_cursor": page.RawResponse.Next})
 	},
 }
 

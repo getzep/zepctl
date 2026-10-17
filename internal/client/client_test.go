@@ -369,8 +369,10 @@ func TestNormalizeSDKBaseURL(t *testing.T) {
 		{"versioned with trailing slash is trimmed", "https://api.development.example.com/api/v4/", "https://api.development.example.com/api/v4"},
 		{"different version is rewritten", "https://api.development.example.com/api/v3", "https://api.development.example.com/api/v4"},
 		{"two-digit version is rewritten", "https://api.development.example.com/api/v10", "https://api.development.example.com/api/v4"},
+		{"version with path suffix is rewritten", "https://proxy/zep/api/v2/x", "https://proxy/zep/api/v4/x"},
 		{"localhost without version", "http://localhost:8000", "http://localhost:8000/api/v4"},
 		{"localhost with version", "http://localhost:8000/api/v2", "http://localhost:8000/api/v4"},
+		{"version with trailing slash is trimmed", "https://h/api/v3/", "https://h/api/v4"},
 		{"proxied path gets /api/v4", "https://proxy.example.com/zep", "https://proxy.example.com/zep/api/v4"},
 		{"proxied path with version is rewritten", "https://proxy.example.com/zep/api/v2", "https://proxy.example.com/zep/api/v4"},
 	}

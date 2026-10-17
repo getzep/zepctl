@@ -10,6 +10,7 @@ import (
 	zep "github.com/getzep/zep-go/v4"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 )
 
@@ -123,6 +124,7 @@ func TestGraphSearchUsesV4ScopeEndpoints(t *testing.T) {
 			}))
 			defer server.Close()
 			configureSDKTestServer(t, server)
+			viper.Set("output", "json")
 
 			cmd := newTestCommand(graphSearchCmd)
 			setGraphSearchFlags(t, cmd, map[string]string{"user": testUUID, "scope": test.scope})
@@ -132,6 +134,86 @@ func TestGraphSearchUsesV4ScopeEndpoints(t *testing.T) {
 			require.Equal(t, "query", gotBody["query"])
 		})
 	}
+}
+
+func TestGraphSearchEdgesTableOutput(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodPost, r.Method)
+		require.Equal(t, "/api/v4/graphs/"+testUUID+"/search/edges", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"items":[{"uuid":"edge-uuid","fact":"edge fact","valid_at":"valid-date","invalid_at":"invalid-date"}],"next_cursor":"next-cursor"}`)
+	}))
+	defer server.Close()
+	configureSDKTestServer(t, server)
+	viper.Set("output", "table")
+
+	cmd := newTestCommand(graphSearchCmd)
+	setGraphSearchFlags(t, cmd, map[string]string{"user": testUUID, "scope": "edges"})
+	var stderr string
+	stdout := captureStdout(t, func() {
+		stderr = captureStderr(t, func() {
+			require.NoError(t, cmd.RunE(cmd, []string{"query"}))
+		})
+	})
+
+	for _, value := range []string{"UUID", "FACT", "VALID AT", "INVALID AT", "edge-uuid", "edge fact"} {
+		require.Contains(t, stdout, value)
+	}
+	require.Contains(t, stderr, "Next cursor: next-cursor")
+}
+
+func TestGraphSearchAutoTableOutput(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodPost, r.Method)
+		require.Equal(t, "/api/v4/graphs/"+testUUID+"/context", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"context":"selected graph context"}`)
+	}))
+	defer server.Close()
+	configureSDKTestServer(t, server)
+	viper.Set("output", "table")
+
+	cmd := newTestCommand(graphSearchCmd)
+	setGraphSearchFlags(t, cmd, map[string]string{"user": testUUID, "scope": "auto"})
+	stdout := captureStdout(t, func() {
+		require.NoError(t, cmd.RunE(cmd, []string{"query"}))
+	})
+
+	require.Equal(t, "selected graph context\n", stdout)
+}
+
+func TestGraphCloneWaitPrintsResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v4/graphs/" + testUUID + "/clone":
+			require.Equal(t, http.MethodPost, r.Method)
+			_, _ = io.WriteString(w, `{"graph":{"uuid":"cloned-graph-uuid"},"task":{"uuid":"task-uuid"}}`)
+		case "/api/v4/tasks/task-uuid":
+			require.Equal(t, http.MethodGet, r.Method)
+			_, _ = io.WriteString(w, `{"uuid":"task-uuid","status":"succeeded"}`)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	configureSDKTestServer(t, server)
+	viper.Set("output", "json")
+
+	cmd := newTestCommand(graphCloneCmd)
+	resetCmdFlags(t, cmd, "source-user", "source-graph", "wait", "timeout")
+	require.NoError(t, cmd.Flags().Set("source-graph", testUUID))
+	require.NoError(t, cmd.Flags().Set("wait", "true"))
+
+	stdout := captureStdout(t, func() {
+		require.NoError(t, cmd.RunE(cmd, nil))
+	})
+	var response map[string]any
+	require.NoError(t, json.Unmarshal([]byte(stdout), &response))
+	graph, ok := response["graph"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "cloned-graph-uuid", graph["uuid"])
 }
 
 func TestGraphSearchRejectsFlagsUnsupportedByScope(t *testing.T) {

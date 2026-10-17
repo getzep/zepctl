@@ -588,10 +588,16 @@ zepctl episode get <uuid>
 #### Get Episode Mentions
 
 ```bash
-zepctl episode mentions <uuid>
+zepctl episode mentions <episode-uuid> [--limit N] [--nodes-cursor CURSOR] [--edges-cursor CURSOR]
 ```
 
-Returns nodes and edges mentioned in the specified episode.
+| Flag | Description |
+|------|-------------|
+| `--limit` | Maximum number of results in each list (default: 50) |
+| `--nodes-cursor` | Cursor for the node list |
+| `--edges-cursor` | Cursor for the edge list |
+
+The command returns nodes and edges that the episode mentions.
 
 #### Delete Episode
 
@@ -917,7 +923,7 @@ zepctl user list -o json | jq '.users[].user_id'
 
 ```bash
 cat users.json | jq -c '.[]' | while read user; do
-  zepctl user create $(echo $user | jq -r '.user_id') \
+  zepctl user create --user-id "$(echo "$user" | jq -r '.user_id')" \
     --email "$(echo $user | jq -r '.email')" \
     --first-name "$(echo $user | jq -r '.first_name')"
 done
@@ -927,10 +933,10 @@ done
 
 ```bash
 # Clone user graph to test environment
-zepctl graph clone --source-user <source-user-uuid> --wait
+cloned_graph_uuid=$(zepctl graph clone --source-user <source-user-uuid> --wait -o json | jq -r '.graph.uuid')
 
 # Verify clone
-zepctl node list --user test_user_123 -o json | jq '.nodes | length'
+zepctl node list --graph "$cloned_graph_uuid" -o json | jq '.items | length'
 ```
 
 ### Monitor Batch Import
