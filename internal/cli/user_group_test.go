@@ -45,6 +45,27 @@ func TestUserGroupCommands_CredentialType(t *testing.T) {
 	}
 }
 
+func TestUserGroupCommandsUseBearerWithAPIKeyOverride(t *testing.T) {
+	t.Run("get", func(t *testing.T) {
+		request := newUserGroupSDKServer(t, http.StatusOK,
+			`{"uuid":"`+testUUID+`","name":"Support","version":1}`)
+		viper.Set("api-key", "test-api-key")
+		cmd := newTestCommand(userGroupGetCmd)
+
+		require.NoError(t, cmd.RunE(cmd, []string{testUUID}))
+		requireBearerProjectHeaders(t, request)
+	})
+
+	t.Run("members list", func(t *testing.T) {
+		request := newUserGroupSDKServer(t, http.StatusOK, `{"items":[]}`)
+		viper.Set("api-key", "test-api-key")
+		cmd := newTestCommand(userGroupMembersListCmd)
+
+		require.NoError(t, cmd.RunE(cmd, []string{testUUID}))
+		requireBearerProjectHeaders(t, request)
+	})
+}
+
 func setFlags(t *testing.T, cmd *cobra.Command, values map[string]string) {
 	t.Helper()
 	for name, value := range values {

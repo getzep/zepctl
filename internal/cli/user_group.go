@@ -27,7 +27,7 @@ var userGroupListCmd = &cobra.Command{
 	Use:   listCmdUse,
 	Short: "List UserGroups in the current project",
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		c, err := client.NewForCommand(cmd)
+		c, err := client.NewWithCredential(cmd.Context(), client.CredentialBearer)
 		if err != nil {
 			return err
 		}
@@ -65,7 +65,7 @@ var userGroupGetCmd = &cobra.Command{
 		if err := validateUUID(args[0], userGroupLabel); err != nil {
 			return err
 		}
-		c, err := client.NewForCommand(cmd)
+		c, err := client.NewWithCredential(cmd.Context(), client.CredentialBearer)
 		if err != nil {
 			return err
 		}
@@ -87,7 +87,7 @@ var userGroupCreateCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		name, _ := cmd.Flags().GetString("name")
 		description, _ := cmd.Flags().GetString("description")
-		c, err := client.NewForCommand(cmd)
+		c, err := client.NewWithCredential(cmd.Context(), client.CredentialBearer)
 		if err != nil {
 			return err
 		}
@@ -123,7 +123,7 @@ var userGroupUpdateCmd = &cobra.Command{
 		if name == nil && description == nil {
 			return fmt.Errorf("at least one of --name or --description is required")
 		}
-		c, err := client.NewForCommand(cmd)
+		c, err := client.NewWithCredential(cmd.Context(), client.CredentialBearer)
 		if err != nil {
 			return err
 		}
@@ -161,7 +161,7 @@ var userGroupDeleteCmd = &cobra.Command{
 		if err != nil || !confirmed {
 			return err
 		}
-		c, err := client.NewForCommand(cmd)
+		c, err := client.NewWithCredential(cmd.Context(), client.CredentialBearer)
 		if err != nil {
 			return err
 		}
@@ -341,7 +341,7 @@ func runMemberList(cmd *cobra.Command, groupUUID string, candidates bool) error 
 	if err := validateUUID(groupUUID, userGroupLabel); err != nil {
 		return err
 	}
-	c, err := client.NewForCommand(cmd)
+	c, err := client.NewWithCredential(cmd.Context(), client.CredentialBearer)
 	if err != nil {
 		return err
 	}
@@ -405,7 +405,7 @@ func runMemberMutation(cmd *cobra.Command, args []string, add bool) error {
 			return err
 		}
 	}
-	c, err := client.NewForCommand(cmd)
+	c, err := client.NewWithCredential(cmd.Context(), client.CredentialBearer)
 	if err != nil {
 		return err
 	}
