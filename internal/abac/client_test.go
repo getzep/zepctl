@@ -340,7 +340,7 @@ func TestClient_EvaluatePolicy_TypedPrincipalAndResource(t *testing.T) {
 			"role_allows": false, "would_log_disagreement": false,
 			"base": "default_deny", "base_allows": false,
 			"principal": {"type": "user", "uuid": "user-1"},
-			"resource": {"type": "graph", "uuid": "graph-1"}
+			"resource": {"type": "graph", "canonical_graph_uuid": "graph-1"}
 		}`))
 	}))
 	defer srv.Close()
@@ -349,16 +349,16 @@ func TestClient_EvaluatePolicy_TypedPrincipalAndResource(t *testing.T) {
 		context.Background(),
 		Principal{Type: PrincipalUser, UUID: "user-1"},
 		"graph.search",
-		&Resource{Type: ResourceGraph, UUID: "graph-1"},
+		&Resource{Type: ResourceGraph, CanonicalGraphUUID: "graph-1"},
 	)
 	require.NoError(t, err)
 	assert.NotContains(t, gotBody, "api_key_uuid")
 	assert.Equal(t, map[string]any{"type": "user", "uuid": "user-1"}, gotBody["principal"])
-	assert.Equal(t, map[string]any{"type": "graph", "uuid": "graph-1"}, gotBody["resource"])
+	assert.Equal(t, map[string]any{"type": "graph", "canonical_graph_uuid": "graph-1"}, gotBody["resource"])
 	require.NotNil(t, result.Principal)
 	assert.Equal(t, PrincipalUser, result.Principal.Type)
 	require.NotNil(t, result.Resource)
-	assert.Equal(t, "graph-1", result.Resource.UUID)
+	assert.Equal(t, "graph-1", result.Resource.CanonicalGraphUUID)
 	assert.Equal(t, "default_deny", result.Base)
 	require.NotNil(t, result.BaseAllows)
 	assert.False(t, *result.BaseAllows)
@@ -461,7 +461,7 @@ func TestClient_ExplainPolicy_ResourceAware(t *testing.T) {
 			"base": "default_deny",
 			"base_allows": false,
 			"principal": {"type": "user", "uuid": "user-1"},
-			"resource": {"type": "graph", "uuid": "graph-1"},
+			"resource": {"type": "graph", "canonical_graph_uuid": "graph-1"},
 			"trace": {
 				"action": "graph.search",
 				"registry_entry": {"read_only": true},
@@ -489,10 +489,10 @@ func TestClient_ExplainPolicy_ResourceAware(t *testing.T) {
 		context.Background(),
 		Principal{Type: PrincipalUser, UUID: "user-1"},
 		"graph.search",
-		&Resource{Type: ResourceGraph, UUID: "graph-1"},
+		&Resource{Type: ResourceGraph, CanonicalGraphUUID: "graph-1"},
 	)
 	require.NoError(t, err)
-	assert.Equal(t, map[string]any{"type": "graph", "uuid": "graph-1"}, gotBody["resource"])
+	assert.Equal(t, map[string]any{"type": "graph", "canonical_graph_uuid": "graph-1"}, gotBody["resource"])
 	assert.Equal(t, "default_deny", result.Base)
 	assert.Equal(t, []string{"group-all", "group-support"}, result.Trace.ResolvedGroupUUIDs)
 	require.Len(t, result.Trace.EvaluatedSets, 1)
@@ -630,6 +630,48 @@ func TestClient_ErrorWithoutBody(t *testing.T) {
 	require.ErrorAs(t, err, &apiErr)
 	assert.Equal(t, http.StatusInternalServerError, apiErr.StatusCode)
 	assert.Contains(t, apiErr.Message, "HTTP 500")
+}
+
+func TestDecodeError(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		body       string
+		wantCode   string
+		wantMsg    string
+	}{
+		{
+			name:       "v4 error envelope",
+			statusCode: http.StatusNotFound,
+			body:       `{"error":{"code":"not_found","message":"graph not found","request_id":"request-1"}}`,
+			wantCode:   "not_found",
+			wantMsg:    "graph not found",
+		},
+		{
+			name:       "top-level error",
+			statusCode: http.StatusBadRequest,
+			body:       `{"code":"bad_request","message":"invalid resource"}`,
+			wantCode:   "bad_request",
+			wantMsg:    "invalid resource",
+		},
+		{
+			name:       "non-JSON body",
+			statusCode: http.StatusInternalServerError,
+			body:       "upstream error",
+			wantMsg:    "API error (HTTP 500)",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := decodeError(test.statusCode, []byte(test.body))
+			var apiErr *APIError
+			require.ErrorAs(t, err, &apiErr)
+			assert.Equal(t, test.statusCode, apiErr.StatusCode)
+			assert.Equal(t, test.wantCode, apiErr.Code)
+			assert.Equal(t, test.wantMsg, apiErr.Message)
+		})
+	}
 }
 
 func TestIsNotFound_NonAPIError(t *testing.T) {

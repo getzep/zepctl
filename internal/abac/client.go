@@ -303,10 +303,26 @@ func (c *Client) doRequestRaw(ctx context.Context, method, path string, body any
 
 func decodeError(statusCode int, raw []byte) error {
 	var errResp struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
 		Code    string `json:"code"`
 		Message string `json:"message"`
 	}
-	if err := json.Unmarshal(raw, &errResp); err != nil || errResp.Message == "" {
+	if err := json.Unmarshal(raw, &errResp); err != nil {
+		return &APIError{
+			StatusCode: statusCode,
+			Message:    fmt.Sprintf("API error (HTTP %d)", statusCode),
+		}
+	}
+	code := errResp.Error.Code
+	message := errResp.Error.Message
+	if message == "" {
+		code = errResp.Code
+		message = errResp.Message
+	}
+	if message == "" {
 		return &APIError{
 			StatusCode: statusCode,
 			Message:    fmt.Sprintf("API error (HTTP %d)", statusCode),
@@ -314,7 +330,7 @@ func decodeError(statusCode int, raw []byte) error {
 	}
 	return &APIError{
 		StatusCode: statusCode,
-		Code:       errResp.Code,
-		Message:    errResp.Message,
+		Code:       code,
+		Message:    message,
 	}
 }

@@ -89,11 +89,10 @@ type Principal struct {
 }
 
 // Resource identifies the object of a resource-aware dry-run evaluation.
-// The UUID is a standalone graph subject's canonical UUID, never a
-// customer-selected graph ID.
+// CanonicalGraphUUID is a standalone graph's V4 UUID, not its groups-row UUID.
 type Resource struct {
-	Type string `json:"type"`
-	UUID string `json:"uuid"`
+	Type               string `json:"type"`
+	CanonicalGraphUUID string `json:"canonical_graph_uuid"`
 }
 
 // EvaluateResponse is the response from POST /api/v4/abac/policies/evaluate.

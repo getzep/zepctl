@@ -501,7 +501,7 @@ func TestUserGroupEvaluate_TableOutputWithGraph(t *testing.T) {
 		gotPath = r.URL.Path
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"outcome":"allow","abac":"ALLOW","abac_shadow":"NEUTRAL","role_allows":false,"would_log_disagreement":false,"base":"default_deny","base_allows":false,"principal":{"type":"user_group","uuid":"` + testUUID + `"},"resource":{"type":"graph","uuid":"` + testUUID2 + `"}}`))
+		_, _ = w.Write([]byte(`{"outcome":"allow","abac":"ALLOW","abac_shadow":"NEUTRAL","role_allows":false,"would_log_disagreement":false,"base":"default_deny","base_allows":false,"principal":{"type":"user_group","uuid":"` + testUUID + `"},"resource":{"type":"graph","canonical_graph_uuid":"` + testUUID2 + `"}}`))
 	}))
 	t.Cleanup(server.Close)
 	withTestABACClient(t, server)
@@ -512,7 +512,7 @@ func TestUserGroupEvaluate_TableOutputWithGraph(t *testing.T) {
 	require.NoError(t, cmd.RunE(cmd, []string{testUUID}))
 	assert.Equal(t, "/api/v4/abac/policies/evaluate", gotPath)
 	assert.Equal(t, map[string]any{"type": "user_group", "uuid": testUUID}, body["principal"])
-	assert.Equal(t, map[string]any{"type": "graph", "uuid": testUUID2}, body["resource"])
+	assert.Equal(t, map[string]any{"type": "graph", "canonical_graph_uuid": testUUID2}, body["resource"])
 	assert.Contains(t, out.String(), "Outcome:                allow")
 }
 
@@ -582,7 +582,7 @@ func TestUserExplain_TableOutput_ResourceAwareSections(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"outcome":"allow","abac":"ALLOW","abac_shadow":"NEUTRAL","role_allows":false,"would_log_disagreement":false,"base":"default_deny","base_allows":false,"principal":{"type":"user","uuid":"` + testUUID + `"},"resource":{"type":"graph","uuid":"` + testUUID2 + `"},"trace":{"action":"graph.search","registry_entry":{"read_only":true},"resolved_group_uuids":["` + testUUID3 + `"],"evaluated_sets":[{"uuid":"9f1a2b3c-set-uuid","name":"support_read","set_mode":"enforce","contributing_group_uuids":["` + testUUID3 + `"],"matched":[{"policy_id":"read_graph","effect":"allow","matched_via":"literal","resource_match":"explicit"}],"skipped":[{"policy_id":"other_graph","effect":"allow","resource_match":"resource_mismatch"}]}],"skipped_sets":[],"object_constraints":{"include":[{"attributes":{"source":["email","slack"]},"subset_match":true}],"exclude":[{"attributes":{"source":["private"]},"subset_match":false}]},"dead_graph_uuids":["` + testUUID3 + `"],"future_top_level":"surprise"}}`))
+		_, _ = w.Write([]byte(`{"outcome":"allow","abac":"ALLOW","abac_shadow":"NEUTRAL","role_allows":false,"would_log_disagreement":false,"base":"default_deny","base_allows":false,"principal":{"type":"user","uuid":"` + testUUID + `"},"resource":{"type":"graph","canonical_graph_uuid":"` + testUUID2 + `"},"trace":{"action":"graph.search","registry_entry":{"read_only":true},"resolved_group_uuids":["` + testUUID3 + `"],"evaluated_sets":[{"uuid":"9f1a2b3c-set-uuid","name":"support_read","set_mode":"enforce","version":1,"contributing_group_uuids":["` + testUUID3 + `"],"matched":[{"policy_id":"read_graph","effect":"allow","matched_via":"literal","resource_match":"explicit"}],"skipped":[{"policy_id":"other_graph","effect":"allow","resource_match":"resource_mismatch"}]}],"skipped_sets":[],"object_constraints":{"include":[{"attributes":{"source":["email","slack"]},"subset_match":true}],"exclude":[{"attributes":{"source":["private"]},"subset_match":false}]},"dead_graph_uuids":["` + testUUID3 + `"],"future_top_level":"surprise"}}`))
 	}))
 	t.Cleanup(server.Close)
 	withTestABACClient(t, server)
