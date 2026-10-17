@@ -171,7 +171,7 @@ var threadGetCmd = &cobra.Command{
 			return tbl.Flush()
 		}
 
-		return output.Print(resp)
+		return output.Print(map[string]any{itemsOutputKey: resp.Results, nextCursorOutputKey: resp.RawResponse.Next})
 	},
 }
 
