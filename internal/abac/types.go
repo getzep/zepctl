@@ -32,9 +32,18 @@ type PolicySetList struct {
 	PolicySets []PolicySetSummary `json:"policy_sets"`
 }
 
-// AttachedPolicySets is the response for api-key policy-set list/attach/detach.
+// AttachedPolicySets is the public response for policy-set attachments.
 type AttachedPolicySets struct {
 	PolicySets []PolicySetSummary `json:"policy_sets"`
+}
+
+type userGroupPolicySetPage struct {
+	Items      []PolicySetSummary `json:"items"`
+	NextCursor string             `json:"next_cursor"`
+}
+
+type userGroupPolicySetList struct {
+	Items []PolicySetSummary `json:"items"`
 }
 
 // APIKeySettings is the response for api-key settings endpoints.

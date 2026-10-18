@@ -148,33 +148,53 @@ func (c *Client) DetachPolicySet(ctx context.Context, keyUUID, policySetUUID str
 // --- User Group Policy Attachments ---
 
 func (c *Client) ListUserGroupPolicySets(ctx context.Context, groupUUID string) (*AttachedPolicySets, error) {
-	var result AttachedPolicySets
-	if err := c.doRequest(ctx, http.MethodGet, userGroupPolicySetsPath(groupUUID), nil, &result); err != nil {
-		return nil, err
+	all := make([]PolicySetSummary, 0)
+	cursor := ""
+	for {
+		path := userGroupPolicySetsPath(groupUUID) + "?page_size=200"
+		if cursor != "" {
+			path += "&cursor=" + url.QueryEscape(cursor)
+		}
+
+		var page userGroupPolicySetPage
+		if err := c.doRequest(ctx, http.MethodGet, path, nil, &page); err != nil {
+			return nil, err
+		}
+		all = append(all, page.Items...)
+		if page.NextCursor == "" {
+			break
+		}
+		cursor = page.NextCursor
 	}
-	return &result, nil
+	return &AttachedPolicySets{PolicySets: all}, nil
 }
 
 func (c *Client) AttachUserGroupPolicySet(
 	ctx context.Context, groupUUID, policySetUUID string,
 ) (*AttachedPolicySets, error) {
 	body := map[string]string{"policy_set_uuid": policySetUUID}
-	var result AttachedPolicySets
+	var result userGroupPolicySetList
 	if err := c.doRequest(ctx, http.MethodPost, userGroupPolicySetsPath(groupUUID), body, &result); err != nil {
 		return nil, err
 	}
-	return &result, nil
+	if result.Items == nil {
+		result.Items = make([]PolicySetSummary, 0)
+	}
+	return &AttachedPolicySets{PolicySets: result.Items}, nil
 }
 
 func (c *Client) DetachUserGroupPolicySet(
 	ctx context.Context, groupUUID, policySetUUID string,
 ) (*AttachedPolicySets, error) {
-	var result AttachedPolicySets
 	path := userGroupPolicySetsPath(groupUUID) + "/" + url.PathEscape(policySetUUID)
-	if err := c.doRequest(ctx, http.MethodDelete, path, nil, &result); err != nil {
+	if err := c.doRequest(ctx, http.MethodDelete, path, nil, nil); err != nil {
 		return nil, err
 	}
-	return &result, nil
+	result, err := c.ListUserGroupPolicySets(ctx, groupUUID)
+	if err != nil {
+		return nil, fmt.Errorf("policy set detached; listing remaining policy sets: %w", err)
+	}
+	return result, nil
 }
 
 // --- Policy Evaluation (Dry-Run) ---

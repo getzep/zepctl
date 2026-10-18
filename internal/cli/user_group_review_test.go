@@ -412,7 +412,7 @@ func TestUserGroupPolicySetsList_TableOutput(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"policy_sets":[{"uuid":"` + testUUID2 + `","name":"support_read","mode":"enforce","version":2}]}`))
+		_, _ = w.Write([]byte(`{"items":[{"uuid":"` + testUUID2 + `","name":"support_read","mode":"enforce","version":2}]}`))
 	}))
 	t.Cleanup(server.Close)
 	withTestABACClient(t, server)
@@ -425,6 +425,28 @@ func TestUserGroupPolicySetsList_TableOutput(t *testing.T) {
 	assert.Equal(t, "/api/v4/user-groups/"+testUUID+"/policy-sets", gotPath)
 }
 
+func TestUserGroupPolicySetsList_JSONOutput(t *testing.T) {
+	var gotPath string
+	var gotPageSize string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotPageSize = r.URL.Query().Get("page_size")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"items":[{"uuid":"` + testUUID2 + `","name":"support_read","mode":"enforce","version":2}]}`))
+	}))
+	t.Cleanup(server.Close)
+	withTestABACClient(t, server)
+	viper.Set("output", "json")
+	t.Cleanup(func() { viper.Set("output", "") })
+	cmd := newTestCommand(userGroupPolicySetsListCmd)
+	var runErr error
+	out := captureStdout(t, func() { runErr = cmd.RunE(cmd, []string{testUUID}) })
+	require.NoError(t, runErr)
+	assert.JSONEq(t, `{"policy_sets":[{"uuid":"`+testUUID2+`","name":"support_read","mode":"enforce","version":2}]}`, out)
+	assert.Equal(t, "/api/v4/user-groups/"+testUUID+"/policy-sets", gotPath)
+	assert.Equal(t, "200", gotPageSize)
+}
+
 func TestUserGroupPolicySetsAttach_TableOutput(t *testing.T) {
 	var gotPath, gotMethod string
 	var body map[string]string
@@ -434,7 +456,7 @@ func TestUserGroupPolicySetsAttach_TableOutput(t *testing.T) {
 			t.Errorf("decode request body: %v", err)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"policy_sets":[{"uuid":"` + testUUID2 + `","name":"support_read","mode":"enforce","version":2}]}`))
+		_, _ = w.Write([]byte(`{"items":[{"uuid":"` + testUUID2 + `","name":"support_read","mode":"enforce","version":2}]}`))
 	}))
 	t.Cleanup(server.Close)
 	withTestABACClient(t, server)
@@ -456,11 +478,17 @@ func TestUserGroupPolicySetsAttach_InvalidPolicySetUUID(t *testing.T) {
 }
 
 func TestUserGroupPolicySetsDetach_TableOutput(t *testing.T) {
-	var gotPath, gotMethod string
+	var gotPaths, gotMethods []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath, gotMethod = r.URL.Path, r.Method
+		gotPaths = append(gotPaths, r.URL.Path)
+		gotMethods = append(gotMethods, r.Method)
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		assert.Equal(t, "200", r.URL.Query().Get("page_size"))
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"policy_sets":[]}`))
+		_, _ = w.Write([]byte(`{"items":[]}`))
 	}))
 	t.Cleanup(server.Close)
 	withTestABACClient(t, server)
@@ -468,8 +496,11 @@ func TestUserGroupPolicySetsDetach_TableOutput(t *testing.T) {
 	var runErr error
 	out := captureStderr(t, func() { runErr = cmd.RunE(cmd, []string{testUUID, testUUID2}) })
 	require.NoError(t, runErr)
-	assert.Equal(t, http.MethodDelete, gotMethod)
-	assert.Equal(t, "/api/v4/user-groups/"+testUUID+"/policy-sets/"+testUUID2, gotPath)
+	assert.Equal(t, []string{http.MethodDelete, http.MethodGet}, gotMethods)
+	assert.Equal(t, []string{
+		"/api/v4/user-groups/" + testUUID + "/policy-sets/" + testUUID2,
+		"/api/v4/user-groups/" + testUUID + "/policy-sets",
+	}, gotPaths)
 	assert.Contains(t, out, "Detached policy set from user group")
 }
 

@@ -511,20 +511,44 @@ func TestClient_ExplainPolicy_ResourceAware(t *testing.T) {
 // --- User Groups ---
 
 func TestClient_ListUserGroupPolicySets(t *testing.T) {
+	var requestCount int
+	var cursors []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method)
 		assert.Equal(t, "/api/v4/user-groups/group-1/policy-sets", r.URL.Path)
+		assert.Equal(t, "200", r.URL.Query().Get("page_size"))
+		requestCount++
+		cursors = append(cursors, r.URL.Query().Get("cursor"))
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(AttachedPolicySets{
-			PolicySets: []PolicySetSummary{{UUID: "ps-1", Name: "support_read", Mode: "enforce", Version: 1}},
-		})
+		if requestCount == 1 {
+			_, _ = w.Write([]byte(`{"items":[{"uuid":"ps-1","name":"support_read","mode":"enforce","version":1}],"next_cursor":"c1"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"items":[{"uuid":"ps-2","name":"support_write","mode":"report_only","version":2}]}`))
 	}))
 	defer srv.Close()
 
 	result, err := newTestClient(srv).ListUserGroupPolicySets(context.Background(), "group-1")
 	require.NoError(t, err)
-	require.Len(t, result.PolicySets, 1)
+	require.Len(t, result.PolicySets, 2)
 	assert.Equal(t, "support_read", result.PolicySets[0].Name)
+	assert.Equal(t, "support_write", result.PolicySets[1].Name)
+	assert.Equal(t, []string{"", "c1"}, cursors)
+	assert.Equal(t, 2, requestCount)
+}
+
+func TestClient_ListUserGroupPolicySets_Empty(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "200", r.URL.Query().Get("page_size"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"items":[]}`))
+	}))
+	defer srv.Close()
+
+	result, err := newTestClient(srv).ListUserGroupPolicySets(context.Background(), "group-1")
+	require.NoError(t, err)
+	require.NotNil(t, result.PolicySets)
+	assert.Empty(t, result.PolicySets)
 }
 
 func TestClient_AttachUserGroupPolicySet(t *testing.T) {
@@ -535,30 +559,40 @@ func TestClient_AttachUserGroupPolicySet(t *testing.T) {
 		body, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(body, &gotBody)
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(AttachedPolicySets{
-			PolicySets: []PolicySetSummary{{UUID: "ps-1", Name: "support_read", Mode: "enforce", Version: 1}},
-		})
+		_, _ = w.Write([]byte(`{"items":[{"uuid":"ps-1","name":"support_read","mode":"enforce","version":1}]}`))
 	}))
 	defer srv.Close()
 
 	result, err := newTestClient(srv).AttachUserGroupPolicySet(context.Background(), "group-1", "ps-1")
 	require.NoError(t, err)
-	assert.Len(t, result.PolicySets, 1)
+	require.Len(t, result.PolicySets, 1)
+	assert.Equal(t, "support_read", result.PolicySets[0].Name)
 	assert.Equal(t, "ps-1", gotBody["policy_set_uuid"])
 }
 
 func TestClient_DetachUserGroupPolicySet(t *testing.T) {
+	var requestCount int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, http.MethodDelete, r.Method)
-		assert.Equal(t, "/api/v4/user-groups/group-1/policy-sets/ps-1", r.URL.Path)
+		requestCount++
+		if requestCount == 1 {
+			assert.Equal(t, http.MethodDelete, r.Method)
+			assert.Equal(t, "/api/v4/user-groups/group-1/policy-sets/ps-1", r.URL.Path)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/api/v4/user-groups/group-1/policy-sets", r.URL.Path)
+		assert.Equal(t, "200", r.URL.Query().Get("page_size"))
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(AttachedPolicySets{PolicySets: []PolicySetSummary{}})
+		_, _ = w.Write([]byte(`{"items":[{"uuid":"ps-2","name":"support_read","mode":"report_only","version":2}]}`))
 	}))
 	defer srv.Close()
 
 	result, err := newTestClient(srv).DetachUserGroupPolicySet(context.Background(), "group-1", "ps-1")
 	require.NoError(t, err)
-	assert.Empty(t, result.PolicySets)
+	require.Len(t, result.PolicySets, 1)
+	assert.Equal(t, "ps-2", result.PolicySets[0].UUID)
+	assert.Equal(t, 2, requestCount)
 }
 
 // A retention policy set cannot attach to a user group.
