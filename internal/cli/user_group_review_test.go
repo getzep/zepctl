@@ -486,22 +486,44 @@ func TestUserGroupPolicySetsDetach_TableOutput(t *testing.T) {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		assert.Equal(t, "200", r.URL.Query().Get("page_size"))
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"items":[]}`))
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		http.NotFound(w, r)
 	}))
 	t.Cleanup(server.Close)
 	withTestABACClient(t, server)
+	viper.Set("output", "table")
+	t.Cleanup(func() { viper.Set("output", "") })
 	cmd := newTestCommand(userGroupPolicySetsDetachCmd)
 	var runErr error
 	out := captureStderr(t, func() { runErr = cmd.RunE(cmd, []string{testUUID, testUUID2}) })
 	require.NoError(t, runErr)
-	assert.Equal(t, []string{http.MethodDelete, http.MethodGet}, gotMethods)
-	assert.Equal(t, []string{
-		"/api/v4/user-groups/" + testUUID + "/policy-sets/" + testUUID2,
-		"/api/v4/user-groups/" + testUUID + "/policy-sets",
-	}, gotPaths)
+	assert.Equal(t, []string{http.MethodDelete}, gotMethods)
+	assert.Equal(t, []string{"/api/v4/user-groups/" + testUUID + "/policy-sets/" + testUUID2}, gotPaths)
 	assert.Contains(t, out, "Detached policy set from user group")
+}
+
+func TestUserGroupPolicySetsDetach_JSONListFailureWarns(t *testing.T) {
+	var gotMethods []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethods = append(gotMethods, r.Method)
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		http.Error(w, "list unavailable", http.StatusInternalServerError)
+	}))
+	t.Cleanup(server.Close)
+	withTestABACClient(t, server)
+	viper.Set("output", "json")
+	t.Cleanup(func() { viper.Set("output", "") })
+	cmd := newTestCommand(userGroupPolicySetsDetachCmd)
+	var runErr error
+	warning := captureStderr(t, func() { runErr = cmd.RunE(cmd, []string{testUUID, testUUID2}) })
+	require.NoError(t, runErr)
+	assert.Equal(t, []string{http.MethodDelete, http.MethodGet}, gotMethods)
+	assert.Contains(t, warning, "was detached")
+	assert.Contains(t, warning, "remaining policy sets")
+	assert.Contains(t, warning, "HTTP 500")
 }
 
 func TestUserGroupEvaluate_InvalidUUID(t *testing.T) {

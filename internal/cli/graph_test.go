@@ -73,6 +73,11 @@ func TestParseDateFilter(t *testing.T) {
 
 	_, err = parseDateFilter("unknown_field:>:2024-01-01")
 	require.Error(t, err)
+
+	for _, input := range []string{"created_at:>:", "created_at:>:   "} {
+		_, err := parseDateFilter(input)
+		require.ErrorContains(t, err, "invalid date filter format")
+	}
 }
 
 func TestParseComparisonOperator(t *testing.T) {
@@ -180,6 +185,61 @@ func TestGraphSearchAutoTableOutput(t *testing.T) {
 	})
 
 	require.Equal(t, "selected graph context\n", stdout)
+}
+
+func TestGraphSearchAutoRawResultsTableOutput(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodPost, r.Method)
+		var request map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+		require.Equal(t, true, request["include_results"])
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"context":"selected graph context","results":{},"truncated":false}`)
+	}))
+	defer server.Close()
+	configureSDKTestServer(t, server)
+	viper.Set("output", "table")
+
+	cmd := newTestCommand(graphSearchCmd)
+	setGraphSearchFlags(t, cmd, map[string]string{
+		"user":               testUUID,
+		"scope":              "auto",
+		"return-raw-results": "true",
+	})
+	stdout := captureStdout(t, func() {
+		require.NoError(t, cmd.RunE(cmd, []string{"query"}))
+	})
+
+	var response map[string]any
+	require.NoError(t, json.Unmarshal([]byte(stdout), &response))
+	require.Contains(t, response, "results")
+}
+
+func TestGraphAddJSONOutputIncludesTaskUUID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodPost, r.Method)
+		require.Equal(t, "/api/v4/graphs/"+testUUID+"/episodes", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"episode":{"uuid":"episode-uuid"},"task":{"uuid":"task-uuid"}}`)
+	}))
+	defer server.Close()
+	configureSDKTestServer(t, server)
+	viper.Set("output", "json")
+
+	flags := []string{"type", "data", "file", "stdin", "user", "batch", "wait"}
+	resetCmdFlags(t, graphAddCmd, flags...)
+	t.Cleanup(func() { resetCmdFlags(t, graphAddCmd, flags...) })
+	cmd := newTestCommand(graphAddCmd)
+	require.NoError(t, cmd.Flags().Set("data", "example episode"))
+	stdout := captureStdout(t, func() {
+		require.NoError(t, cmd.RunE(cmd, []string{testUUID}))
+	})
+
+	var response map[string]any
+	require.NoError(t, json.Unmarshal([]byte(stdout), &response))
+	task, ok := response["task"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "task-uuid", task["uuid"])
 }
 
 func TestGraphCloneWaitPrintsResponse(t *testing.T) {

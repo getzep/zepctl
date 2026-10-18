@@ -290,12 +290,19 @@ var userGroupPolicySetsDetachCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		result, err := ac.DetachUserGroupPolicySet(cmd.Context(), args[0], args[1])
-		if err != nil {
+		if err := ac.DetachUserGroupPolicySet(cmd.Context(), args[0], args[1]); err != nil {
 			return fmt.Errorf("detaching policy set: %w", err)
 		}
 		if output.GetFormat() == output.FormatTable {
 			output.Info("Detached policy set from user group %s", args[0])
+			return nil
+		}
+		result, err := ac.ListUserGroupPolicySets(cmd.Context(), args[0])
+		if err != nil {
+			output.Warn(
+				"Policy set %s was detached from user group %s, but the command could not list the remaining policy sets: %v",
+				args[1], args[0], err,
+			)
 			return nil
 		}
 		return output.Print(result)

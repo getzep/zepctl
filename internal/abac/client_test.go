@@ -572,27 +572,19 @@ func TestClient_AttachUserGroupPolicySet(t *testing.T) {
 
 func TestClient_DetachUserGroupPolicySet(t *testing.T) {
 	var requestCount int
+	var gotMethod, gotPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount++
-		if requestCount == 1 {
-			assert.Equal(t, http.MethodDelete, r.Method)
-			assert.Equal(t, "/api/v4/user-groups/group-1/policy-sets/ps-1", r.URL.Path)
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		assert.Equal(t, http.MethodGet, r.Method)
-		assert.Equal(t, "/api/v4/user-groups/group-1/policy-sets", r.URL.Path)
-		assert.Equal(t, "200", r.URL.Query().Get("page_size"))
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"items":[{"uuid":"ps-2","name":"support_read","mode":"report_only","version":2}]}`))
+		gotMethod, gotPath = r.Method, r.URL.Path
+		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer srv.Close()
 
-	result, err := newTestClient(srv).DetachUserGroupPolicySet(context.Background(), "group-1", "ps-1")
+	err := newTestClient(srv).DetachUserGroupPolicySet(context.Background(), "group-1", "ps-1")
 	require.NoError(t, err)
-	require.Len(t, result.PolicySets, 1)
-	assert.Equal(t, "ps-2", result.PolicySets[0].UUID)
-	assert.Equal(t, 2, requestCount)
+	assert.Equal(t, http.MethodDelete, gotMethod)
+	assert.Equal(t, "/api/v4/user-groups/group-1/policy-sets/ps-1", gotPath)
+	assert.Equal(t, 1, requestCount)
 }
 
 // A retention policy set cannot attach to a user group.

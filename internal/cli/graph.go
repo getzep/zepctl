@@ -354,7 +354,7 @@ var graphAddCmd = &cobra.Command{
 			}
 		}
 		output.Info("Added data to graph")
-		return output.Print(resp.Episode)
+		return output.Print(resp)
 	},
 }
 
@@ -536,7 +536,7 @@ var graphSearchCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("getting graph context: %w", err)
 			}
-			if output.GetFormat() == output.FormatTable {
+			if output.GetFormat() == output.FormatTable && !includeResults {
 				return printGraphSearchContext(resp.Context)
 			}
 			return output.Print(resp)
@@ -1033,6 +1033,9 @@ func parseDateFilter(filter string) (*zep.DateFilter, error) {
 		}
 		operator = zep.DateFilterOperator(parsedOperator)
 		rawValue = strings.TrimSpace(parts[2])
+		if rawValue == "" {
+			return nil, fmt.Errorf("invalid date filter format: %q (expected field:operator:date)", filter)
+		}
 	}
 
 	dateField, err := zep.NewDateFilterFieldFromString(field)
