@@ -66,9 +66,7 @@ var nodeListCmd = &cobra.Command{
 				if n.Summary != nil {
 					summary = *n.Summary
 				}
-				if len(summary) > 40 {
-					summary = summary[:40] + "..."
-				}
+				summary = truncateText(summary, 40)
 				tbl.WriteRow(valueOrEmpty(n.UUID), valueOrEmpty(n.Name), label, summary)
 			}
 			writeNextCursor(nodes.RawResponse.Next)
@@ -153,9 +151,7 @@ var nodeEdgesCmd = &cobra.Command{
 			tbl.WriteHeader()
 			for _, e := range edges.Results {
 				fact := valueOrEmpty(e.Fact)
-				if len(fact) > 40 {
-					fact = fact[:40] + "..."
-				}
+				fact = truncateText(fact, 40)
 				tbl.WriteRow(valueOrEmpty(e.UUID), valueOrEmpty(e.Name), fact, valueOrEmpty(e.SourceNodeUUID), valueOrEmpty(e.TargetNodeUUID))
 			}
 			writeNextCursor(edges.RawResponse.Next)
@@ -206,9 +202,7 @@ var nodeEpisodesCmd = &cobra.Command{
 					source = string(*ep.Source)
 				}
 				content := valueOrEmpty(ep.Content)
-				if len(content) > 40 {
-					content = content[:40] + "..."
-				}
+				content = truncateText(content, 40)
 				tbl.WriteRow(valueOrEmpty(ep.UUID), source, content, valueOrEmpty(ep.CreatedAt))
 			}
 			writeNextCursor(episodes.RawResponse.Next)

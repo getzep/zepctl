@@ -71,9 +71,7 @@ var threadSummaryListCmd = &cobra.Command{
 				summary := ""
 				if s.Summary != nil {
 					summary = *s.Summary
-					if len(summary) > 50 {
-						summary = summary[:50] + "..."
-					}
+					summary = truncateText(summary, 50)
 				}
 				lastSummarizedAt := ""
 				if s.LastSummarizedAt != nil {

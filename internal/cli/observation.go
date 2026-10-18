@@ -61,9 +61,7 @@ var observationListCmd = &cobra.Command{
 				summary := ""
 				if o.Summary != nil {
 					summary = *o.Summary
-					if len(summary) > 40 {
-						summary = summary[:40] + "..."
-					}
+					summary = truncateText(summary, 40)
 				}
 				tbl.WriteRow(valueOrEmpty(o.UUID), valueOrEmpty(o.Name), strings.Join(o.Labels, ","), summary, valueOrEmpty(o.CreatedAt))
 			}

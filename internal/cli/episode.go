@@ -69,9 +69,7 @@ var episodeListCmd = &cobra.Command{
 					role = string(*ep.Role)
 				}
 				content := valueOrEmpty(ep.Content)
-				if len(content) > 40 {
-					content = content[:40] + "..."
-				}
+				content = truncateText(content, 40)
 				tbl.WriteRow(valueOrEmpty(ep.UUID), source, role, content, valueOrEmpty(ep.CreatedAt))
 			}
 			if episodePage.RawResponse.Next != nil && *episodePage.RawResponse.Next != "" {

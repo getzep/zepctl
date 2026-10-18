@@ -42,10 +42,7 @@ var summaryInstructionsListCmd = &cobra.Command{
 			tbl := output.NewTable("NAME", "TEXT")
 			tbl.WriteHeader()
 			for _, inst := range result.Instructions {
-				text := inst.Text
-				if len(text) > 60 {
-					text = text[:60] + "..."
-				}
+				text := truncateText(inst.Text, 60)
 				tbl.WriteRow(inst.Name, text)
 			}
 			return tbl.Flush()

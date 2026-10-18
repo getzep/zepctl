@@ -629,7 +629,7 @@ var graphSearchCmd = &cobra.Command{
 					return []string{
 						valueOrEmpty(node.UUID),
 						valueOrEmpty(node.Name),
-						truncateGraphSearchValue(valueOrEmpty(node.Summary), 50),
+						truncateText(valueOrEmpty(node.Summary), 50),
 					}
 				})
 			}
@@ -657,7 +657,7 @@ var graphSearchCmd = &cobra.Command{
 						valueOrEmpty(episode.UUID),
 						valueOrEmpty(episode.Source),
 						valueOrEmpty(episode.Role),
-						truncateGraphSearchValue(valueOrEmpty(episode.Content), 40),
+						truncateText(valueOrEmpty(episode.Content), 40),
 						valueOrEmpty(episode.CreatedAt),
 					}
 				})
@@ -686,7 +686,7 @@ var graphSearchCmd = &cobra.Command{
 						valueOrEmpty(observation.UUID),
 						valueOrEmpty(observation.Name),
 						strings.Join(observation.Labels, ","),
-						truncateGraphSearchValue(valueOrEmpty(observation.Summary), 40),
+						truncateText(valueOrEmpty(observation.Summary), 40),
 						valueOrEmpty(observation.CreatedAt),
 					}
 				})
@@ -713,7 +713,7 @@ var graphSearchCmd = &cobra.Command{
 				return []string{
 					valueOrEmpty(summary.UUID),
 					valueOrEmpty(summary.ThreadUUID),
-					truncateGraphSearchValue(valueOrEmpty(summary.Summary), 50),
+					truncateText(valueOrEmpty(summary.Summary), 50),
 					valueOrEmpty(summary.LastSummarizedAt),
 				}
 			})
@@ -757,13 +757,6 @@ func printGraphSearchTable[T any](results []T, cursor *string, headers []string,
 func printGraphSearchContext(contextText *string) error {
 	_, err := fmt.Println(valueOrEmpty(contextText))
 	return err
-}
-
-func truncateGraphSearchValue(value string, limit int) string {
-	if len(value) > limit {
-		return value[:limit] + "..."
-	}
-	return value
 }
 
 func writeNextCursor(cursor *string) {

@@ -62,9 +62,7 @@ var edgeListCmd = &cobra.Command{
 				if e.Fact != nil {
 					fact = *e.Fact
 				}
-				if len(fact) > 40 {
-					fact = fact[:40] + "..."
-				}
+				fact = truncateText(fact, 40)
 				validAt := ""
 				if e.ValidAt != nil {
 					validAt = *e.ValidAt

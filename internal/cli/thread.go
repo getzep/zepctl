@@ -159,9 +159,7 @@ var threadGetCmd = &cobra.Command{
 				if m.Content != nil {
 					content = *m.Content
 				}
-				if len(content) > 50 {
-					content = content[:50] + "..."
-				}
+				content = truncateText(content, 50)
 				createdAt := ""
 				if m.CreatedAt != nil {
 					createdAt = *m.CreatedAt
@@ -257,9 +255,7 @@ var threadMessagesCmd = &cobra.Command{
 				if m.Content != nil {
 					content = *m.Content
 				}
-				if len(content) > 50 {
-					content = content[:50] + "..."
-				}
+				content = truncateText(content, 50)
 				createdAt := ""
 				if m.CreatedAt != nil {
 					createdAt = *m.CreatedAt
