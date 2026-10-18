@@ -163,13 +163,22 @@ var authStatusCmd = &cobra.Command{
 			return fmt.Errorf("loading config: %w", err)
 		}
 
+		bearerTokenOverride := config.GetBearerTokenOverride() != ""
 		profile := cfg.GetCurrentProfile()
 		if profile == nil {
+			if bearerTokenOverride {
+				fmt.Println("Bearer commands use ZEP_BEARER_TOKEN instead of the keychain token.")
+				return nil
+			}
 			return fmt.Errorf("no active profile")
 		}
 
 		creds, err := keyring.GetCredentials(profile.Name)
 		if err != nil {
+			if bearerTokenOverride {
+				fmt.Println("Bearer commands use ZEP_BEARER_TOKEN instead of the keychain token.")
+				return nil
+			}
 			return fmt.Errorf("reading credentials: %w", err)
 		}
 
@@ -205,7 +214,7 @@ var authStatusCmd = &cobra.Command{
 			fmt.Println("Bearer token:  not configured")
 		}
 
-		if config.GetBearerTokenOverride() != "" {
+		if bearerTokenOverride {
 			fmt.Println("Bearer commands use ZEP_BEARER_TOKEN instead of the keychain token.")
 		}
 

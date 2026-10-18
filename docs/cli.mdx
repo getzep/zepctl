@@ -45,7 +45,7 @@ zepctl supports two authentication modes that coexist on the same profile:
 - **API key** (long-lived): pass via `ZEP_API_KEY` or store per-profile in the system keychain. Used for headless / CI scenarios.
 - **Bearer token** (OAuth / Kinde): obtained interactively via `zepctl auth login` and stored as a refresh token in the system keychain. Required for the ABAC management commands (`policy-set`, `api-key`, `user-group`, and `user groups|evaluate|explain`) and the `config set-project` interactive flow.
 
-`ZEP_BEARER_TOKEN` provides an external bearer token for bearer commands, is not refreshed, and overrides the keychain token; `ZEP_API_KEY` still takes priority.
+`ZEP_BEARER_TOKEN` sets the bearer token for bearer commands. The CLI does not refresh this token. It overrides the keychain token.
 
 Commands that require bearer auth use the bearer token even if an API key is also present.
 
