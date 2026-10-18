@@ -9,7 +9,11 @@ import (
 	"github.com/spf13/viper"
 )
 
-const listCmdUse = "list"
+const (
+	listCmdUse          = "list"
+	itemsOutputKey      = "items"
+	nextCursorOutputKey = "next_cursor"
+)
 
 var (
 	// Version information set by goreleaser.

@@ -357,7 +357,7 @@ func TestAPIKeyEvaluate_ActionFlagRequired(t *testing.T) {
 func TestAPIKeyEvaluate_TableOutput(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"outcome":"allow","abac":"ALLOW","abac_shadow":"NEUTRAL","role_allows":false,"would_log_disagreement":true}`))
+		_, _ = w.Write([]byte(`{"outcome":"allow","abac":"ALLOW","abac_shadow":"NEUTRAL","role_allows":false,"would_log_disagreement":true,"resource":{"type":"graph","canonical_graph_uuid":"graph-1"}}`))
 	}))
 	defer srv.Close()
 	withTestABACClient(t, srv)
@@ -377,6 +377,7 @@ func TestAPIKeyEvaluate_TableOutput(t *testing.T) {
 	assert.Contains(t, out, "ABAC shadow:            NEUTRAL")
 	assert.Contains(t, out, "Role allows:            false")
 	assert.Contains(t, out, "Would log disagreement: true")
+	assert.Contains(t, out, "Resource:               graph graph-1")
 }
 
 // Allow/deny outcome must not change the exit code -- the operator

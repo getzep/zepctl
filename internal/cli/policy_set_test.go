@@ -336,7 +336,7 @@ func TestPolicySetDelete_Force(t *testing.T) {
 	})
 	assert.NoError(t, runErr)
 	assert.Equal(t, http.MethodDelete, gotMethod)
-	assert.Equal(t, "/api/v2/abac/policy-sets/"+testUUID, gotPath)
+	assert.Equal(t, "/api/v4/abac/policy-sets/"+testUUID, gotPath)
 	assert.Contains(t, out, "Deleted policy set")
 	assert.Contains(t, out, testUUID)
 }

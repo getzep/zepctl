@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/getzep/zep-go/v3"
-	zepgraph "github.com/getzep/zep-go/v3/graph"
+	"github.com/getzep/zep-go/v4"
+	zepgraph "github.com/getzep/zep-go/v4/graph"
 	"github.com/getzep/zepctl/internal/client"
 	"github.com/getzep/zepctl/internal/output"
 	"github.com/spf13/cobra"
@@ -34,41 +34,35 @@ var edgeListCmd = &cobra.Command{
 			return err
 		}
 
-		var edges []*zep.EntityEdge
-
 		limit, _ := cmd.Flags().GetInt("limit")
 		cursor, _ := cmd.Flags().GetString("cursor")
 
-		req := &zep.GraphEdgesRequest{}
+		req := &zepgraph.EdgeListRequest{}
 		if limit > 0 {
-			req.Limit = zep.Int(limit)
+			req.PageSize = zep.Int(limit)
 		}
 		if cursor != "" {
-			req.UUIDCursor = zep.String(cursor)
+			req.Cursor = zep.String(cursor)
 		}
 
+		graphUUID := graphID
 		if userID != "" {
-			result, err := c.Graph.Edge.GetByUserID(context.Background(), userID, req)
-			if err != nil {
-				return fmt.Errorf("listing edges: %w", err)
-			}
-			edges = result
-		} else {
-			result, err := c.Graph.Edge.GetByGraphID(context.Background(), graphID, req)
-			if err != nil {
-				return fmt.Errorf("listing edges: %w", err)
-			}
-			edges = result
+			graphUUID = userID
+		}
+		edges, err := c.Graph.Edge.List(context.Background(), graphUUID, req)
+		if err != nil {
+			return fmt.Errorf("listing edges: %w", err)
 		}
 
 		if output.GetFormat() == output.FormatTable {
 			tbl := output.NewTable("UUID", "NAME", "FACT", "VALID AT", "INVALID AT")
 			tbl.WriteHeader()
-			for _, e := range edges {
-				fact := e.Fact
-				if len(fact) > 40 {
-					fact = fact[:40] + "..."
+			for _, e := range edges.Results {
+				fact := ""
+				if e.Fact != nil {
+					fact = *e.Fact
 				}
+				fact = truncateText(fact, 40)
 				validAt := ""
 				if e.ValidAt != nil {
 					validAt = *e.ValidAt
@@ -77,28 +71,35 @@ var edgeListCmd = &cobra.Command{
 				if e.InvalidAt != nil {
 					invalidAt = *e.InvalidAt
 				}
-				tbl.WriteRow(e.UUID, e.Name, fact, validAt, invalidAt)
+				tbl.WriteRow(valueOrEmpty(e.UUID), valueOrEmpty(e.Name), fact, validAt, invalidAt)
+			}
+			if edges.RawResponse.Next != nil && *edges.RawResponse.Next != "" {
+				output.Info("Next cursor: %s", *edges.RawResponse.Next)
 			}
 			return tbl.Flush()
 		}
 
-		return output.Print(edges)
+		return output.Print(map[string]any{itemsOutputKey: edges.Results, nextCursorOutputKey: edges.RawResponse.Next})
 	},
 }
 
 var edgeGetCmd = &cobra.Command{
-	Use:   "get <uuid>",
+	Use:   "get <edge-uuid>",
 	Short: "Get edge details",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		uuid := args[0]
+		graphUUID, err := graphUUIDFromFlags(cmd)
+		if err != nil {
+			return err
+		}
 
 		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
 
-		edge, err := c.Graph.Edge.Get(context.Background(), uuid)
+		edge, err := c.Graph.Edge.Get(context.Background(), graphUUID, uuid)
 		if err != nil {
 			return fmt.Errorf("getting edge: %w", err)
 		}
@@ -106,18 +107,18 @@ var edgeGetCmd = &cobra.Command{
 		if output.GetFormat() == output.FormatTable {
 			tbl := output.NewTable("FIELD", "VALUE")
 			tbl.WriteHeader()
-			tbl.WriteRow("UUID", edge.UUID)
-			tbl.WriteRow("Name", edge.Name)
-			tbl.WriteRow("Fact", edge.Fact)
-			tbl.WriteRow("Source Node", edge.SourceNodeUUID)
-			tbl.WriteRow("Target Node", edge.TargetNodeUUID)
+			tbl.WriteRow("UUID", valueOrEmpty(edge.UUID))
+			tbl.WriteRow("Name", valueOrEmpty(edge.Name))
+			tbl.WriteRow("Fact", valueOrEmpty(edge.Fact))
+			tbl.WriteRow("Source Node", valueOrEmpty(edge.SourceNodeUUID))
+			tbl.WriteRow("Target Node", valueOrEmpty(edge.TargetNodeUUID))
 			if edge.ValidAt != nil {
 				tbl.WriteRow("Valid At", *edge.ValidAt)
 			}
 			if edge.InvalidAt != nil {
 				tbl.WriteRow("Invalid At", *edge.InvalidAt)
 			}
-			tbl.WriteRow("Created At", edge.CreatedAt)
+			tbl.WriteRow("Created At", valueOrEmpty(edge.CreatedAt))
 			return tbl.Flush()
 		}
 
@@ -126,16 +127,16 @@ var edgeGetCmd = &cobra.Command{
 }
 
 var edgeUpdateCmd = &cobra.Command{
-	Use:   "update <uuid>",
+	Use:   "update <edge-uuid>",
 	Short: "Update an edge",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		uuid := args[0]
+		graphUUID, err := graphUUIDFromFlags(cmd)
+		if err != nil {
+			return err
+		}
 		fact, _ := cmd.Flags().GetString("fact")
-		name, _ := cmd.Flags().GetString("name")
-		validAt, _ := cmd.Flags().GetString("valid-at")
-		invalidAt, _ := cmd.Flags().GetString("invalid-at")
-		expiredAt, _ := cmd.Flags().GetString("expired-at")
 		attrsStr, _ := cmd.Flags().GetString("attrs")
 
 		c, err := client.NewForCommand(cmd)
@@ -143,22 +144,10 @@ var edgeUpdateCmd = &cobra.Command{
 			return err
 		}
 
-		req := &zepgraph.UpdateEdgeRequest{}
+		req := &zepgraph.PatchEdgeRequest{}
 
 		if fact != "" {
 			req.Fact = zep.String(fact)
-		}
-		if name != "" {
-			req.Name = zep.String(name)
-		}
-		if validAt != "" {
-			req.ValidAt = zep.String(validAt)
-		}
-		if invalidAt != "" {
-			req.InvalidAt = zep.String(invalidAt)
-		}
-		if expiredAt != "" {
-			req.ExpiredAt = zep.String(expiredAt)
 		}
 		if attrsStr != "" {
 			var attrs map[string]any
@@ -168,7 +157,7 @@ var edgeUpdateCmd = &cobra.Command{
 			req.Attributes = attrs
 		}
 
-		edge, err := c.Graph.Edge.Update(context.Background(), uuid, req)
+		edge, err := c.Graph.Edge.Update(context.Background(), graphUUID, uuid, req)
 		if err != nil {
 			return fmt.Errorf("updating edge: %w", err)
 		}
@@ -179,11 +168,15 @@ var edgeUpdateCmd = &cobra.Command{
 }
 
 var edgeDeleteCmd = &cobra.Command{
-	Use:   "delete <uuid>",
+	Use:   "delete <edge-uuid>",
 	Short: "Delete an edge",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		uuid := args[0]
+		graphUUID, err := graphUUIDFromFlags(cmd)
+		if err != nil {
+			return err
+		}
 		force, _ := cmd.Flags().GetBool("force")
 
 		if !force {
@@ -199,12 +192,14 @@ var edgeDeleteCmd = &cobra.Command{
 			return err
 		}
 
-		if _, err := c.Graph.Edge.Delete(context.Background(), uuid); err != nil {
+		result, err := c.Graph.Edge.Delete(context.Background(), graphUUID, uuid)
+		if err != nil {
 			return fmt.Errorf("deleting edge: %w", err)
 		}
 
-		output.Info("Deleted edge %q", uuid)
-		return nil
+		wait, _ := cmd.Flags().GetBool("wait")
+		timeout, _ := cmd.Flags().GetDuration("timeout")
+		return reportDeletion(c, "edge", uuid, result.Task, wait, timeout)
 	},
 }
 
@@ -216,19 +211,21 @@ func init() {
 	edgeCmd.AddCommand(edgeDeleteCmd)
 
 	// List flags
-	edgeListCmd.Flags().String("user", "", "List edges for user graph")
-	edgeListCmd.Flags().String("graph", "", "List edges for standalone graph")
+	edgeListCmd.Flags().String("user", "", "User UUID for a user graph")
+	edgeListCmd.Flags().String("graph", "", "Graph UUID for a standalone graph")
 	edgeListCmd.Flags().Int("limit", 50, "Maximum number of results to return")
 	edgeListCmd.Flags().String("cursor", "", "UUID cursor for pagination (last UUID from previous page)")
+	for _, command := range []*cobra.Command{edgeGetCmd, edgeUpdateCmd, edgeDeleteCmd} {
+		command.Flags().String("user", "", "User UUID for a user graph")
+		command.Flags().String("graph", "", "Graph UUID for a standalone graph")
+	}
 
 	// Update flags
 	edgeUpdateCmd.Flags().String("fact", "", "Updated fact")
-	edgeUpdateCmd.Flags().String("name", "", "Updated relationship type name")
-	edgeUpdateCmd.Flags().String("valid-at", "", "Updated time the fact becomes true (ISO 8601)")
-	edgeUpdateCmd.Flags().String("invalid-at", "", "Updated time the fact stops being true (ISO 8601)")
-	edgeUpdateCmd.Flags().String("expired-at", "", "Updated edge expiration time (ISO 8601)")
 	edgeUpdateCmd.Flags().String("attrs", "", "Attributes as JSON (merged with existing, set key to null to delete)")
 
 	// Delete flags
 	edgeDeleteCmd.Flags().Bool("force", false, "Skip confirmation prompt")
+	edgeDeleteCmd.Flags().Bool("wait", false, "Wait for asynchronous deletion")
+	edgeDeleteCmd.Flags().Duration("timeout", defaultTaskTimeout, "Maximum time to wait")
 }

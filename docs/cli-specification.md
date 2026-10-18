@@ -47,7 +47,6 @@ environments:
     oauth-audience: <audience>
 defaults:
   output: table
-  page-size: 50
 ```
 
 **Credential Storage**: API keys and OAuth refresh tokens are stored in the system keychain (macOS Keychain, Windows Credential Manager, or Linux Secret Service) rather than in the config file. For CI/CD environments without keychain access, use the `ZEP_API_KEY` environment variable.
@@ -173,13 +172,13 @@ zepctl user list [flags]
 
 | Flag | Description |
 |------|-------------|
-| `--page` | Page number (default: 1) |
-| `--page-size` | Results per page (default: 50) |
+| `--limit` | Maximum number of results (default: 50) |
+| `--cursor` | Opaque cursor from the previous page |
 
 #### Get User
 
 ```bash
-zepctl user get <user-id>
+zepctl user get <user-uuid>
 ```
 
 **Output Fields**: `user_id`, `uuid`, `email`, `first_name`, `last_name`, `created_at`, `metadata`
@@ -187,7 +186,7 @@ zepctl user get <user-id>
 #### Create User
 
 ```bash
-zepctl user create <user-id> [flags]
+zepctl user create [flags]
 ```
 
 | Flag | Description |
@@ -195,13 +194,14 @@ zepctl user create <user-id> [flags]
 | `--email` | User email address |
 | `--first-name` | User first name |
 | `--last-name` | User last name |
+| `--user-id` | External identity-provider ID |
 | `--metadata` | JSON metadata string |
 | `--metadata-file` | Path to JSON metadata file |
 
 #### Update User
 
 ```bash
-zepctl user update <user-id> [flags]
+zepctl user update <user-uuid> [flags]
 ```
 
 | Flag | Description |
@@ -215,30 +215,32 @@ zepctl user update <user-id> [flags]
 #### Delete User
 
 ```bash
-zepctl user delete <user-id> [flags]
+zepctl user delete <user-uuid> [flags]
 ```
 
 | Flag | Description |
 |------|-------------|
 | `--force` | Skip confirmation prompt |
+| `--wait` | Wait for the deletion task |
+| `--timeout` | Maximum wait time (default: 5m) |
 
 **Note**: Deleting a user removes all associated threads, graph data, and knowledge. Supports RTBF compliance.
 
 #### List User Threads
 
 ```bash
-zepctl user threads <user-id> [flags]
+zepctl user threads <user-uuid> [flags]
 ```
 
 | Flag | Description |
 |------|-------------|
-| `--page` | Page number (default: 1) |
-| `--page-size` | Results per page (default: 50) |
+| `--limit` | Maximum number of results (default: 50) |
+| `--cursor` | Opaque cursor from the previous page |
 
 #### Get User Graph Node
 
 ```bash
-zepctl user node <user-id>
+zepctl user node <user-uuid>
 ```
 
 #### List Effective UserGroups
@@ -270,46 +272,48 @@ These evaluate the policy sets attached to the user's effective UserGroups again
 #### Create Thread
 
 ```bash
-zepctl thread create <thread-id> --user <user-id> [flags]
+zepctl thread create --user <user-uuid> [flags]
 ```
 
 | Flag | Description |
 |------|-------------|
-| `--user` | User ID (required) |
+| `--user` | User UUID (required) |
 | `--metadata` | JSON metadata string |
 | `--metadata-file` | Path to JSON metadata file |
 
 #### Get Thread
 
 ```bash
-zepctl thread get <thread-id>
+zepctl thread get <thread-uuid>
 ```
 
 #### Delete Thread
 
 ```bash
-zepctl thread delete <thread-id> [flags]
+zepctl thread delete <thread-uuid> [flags]
 ```
 
 | Flag | Description |
 |------|-------------|
 | `--force` | Skip confirmation prompt |
+| `--wait` | Wait for the deletion task |
+| `--timeout` | Maximum wait time (default: 5m) |
 
 #### List Thread Messages
 
 ```bash
-zepctl thread messages <thread-id> [flags]
+zepctl thread messages <thread-uuid> [flags]
 ```
 
 | Flag | Description |
 |------|-------------|
-| `--page` | Page number (default: 1) |
-| `--page-size` | Results per page (default: 50) |
+| `--limit` | Maximum number of results (default: 50) |
+| `--cursor` | Opaque cursor from the previous page |
 
 #### Add Messages to Thread
 
 ```bash
-zepctl thread add-messages <thread-id> [flags]
+zepctl thread add-messages <thread-uuid> [flags]
 ```
 
 | Flag | Description |
@@ -326,7 +330,8 @@ zepctl thread add-messages <thread-id> [flags]
     {
       "role": "user",
       "name": "Alice",
-      "content": "Hello, I need help with my account"
+      "content": "Hello, I need help with my account",
+      "reference_time": "2025-01-01T12:00:00Z"
     },
     {
       "role": "assistant",
@@ -339,7 +344,7 @@ zepctl thread add-messages <thread-id> [flags]
 #### Get Thread Context
 
 ```bash
-zepctl thread context <thread-id>
+zepctl thread context <thread-uuid>
 ```
 
 Returns relevant context from the user graph based on recent thread messages.
@@ -356,24 +361,31 @@ zepctl graph list [flags]
 
 | Flag | Description |
 |------|-------------|
-| `--page` | Page number (default: 1) |
-| `--page-size` | Results per page (default: 50) |
+| `--limit` | Maximum number of results (default: 50) |
+| `--cursor` | Opaque cursor from the previous page |
 
 #### Create Graph
 
 ```bash
-zepctl graph create <graph-id>
+zepctl graph create [flags]
 ```
+
+| Flag | Description |
+|------|-------------|
+| `--name` | Graph name |
+| `--description` | Graph description |
 
 #### Delete Graph
 
 ```bash
-zepctl graph delete <graph-id> [flags]
+zepctl graph delete <graph-uuid> [flags]
 ```
 
 | Flag | Description |
 |------|-------------|
 | `--force` | Skip confirmation prompt |
+| `--wait` | Wait for the deletion task |
+| `--timeout` | Maximum wait time (default: 5m) |
 
 **Note**: To delete a user graph, use `zepctl user delete` instead.
 
@@ -385,25 +397,24 @@ zepctl graph clone [flags]
 
 | Flag | Description |
 |------|-------------|
-| `--source-user` | Source user ID (for user graphs) |
-| `--target-user` | Target user ID (for user graphs) |
-| `--source-graph` | Source graph ID (for standalone graphs) |
-| `--target-graph` | Target graph ID (for standalone graphs) |
+| `--source-user` | Source user UUID (for user graphs) |
+| `--source-graph` | Source graph UUID (for standalone graphs) |
 | `--wait` | Wait for clone operation to complete |
+| `--timeout` | Maximum wait time (default: 5m) |
 
 **Examples**:
 ```bash
 # Clone a user graph
-zepctl graph clone --source-user user_123 --target-user user_123_test
+zepctl graph clone --source-user <user-uuid>
 
 # Clone a standalone graph
-zepctl graph clone --source-graph graph_456 --target-graph graph_456_backup
+zepctl graph clone --source-graph <graph-uuid>
 ```
 
 #### Add Data to Graph
 
 ```bash
-zepctl graph add <graph-id> [flags]
+zepctl graph add <graph-uuid> [flags]
 ```
 
 | Flag | Description |
@@ -412,7 +423,7 @@ zepctl graph add <graph-id> [flags]
 | `--data` | Inline data string |
 | `--file` | Path to data file |
 | `--stdin` | Read data from stdin |
-| `--user` | Add to user graph instead of standalone graph |
+| `--user` | User UUID for a user graph |
 | `--batch` | Enable batch processing (up to 20 episodes) |
 | `--wait` | Wait for ingestion to complete |
 
@@ -455,13 +466,19 @@ zepctl graph search <query> [flags]
 | `--mmr-lambda` | MMR diversity/relevance balance (0-1) |
 | `--max-characters` | Max total characters across selected results (`scope=auto`, max 50000) |
 | `--return-raw-results` | When `scope=auto`, include raw graph results alongside the materialized context block |
-| `--exclude-node-labels` | Comma-separated node labels to exclude |
-| `--exclude-edge-types` | Comma-separated edge types to exclude |
+| `--exclude-node-labels` | Comma-separated node labels to exclude (`scope=nodes`) |
+| `--node-labels` | Comma-separated node labels to include (`scope=nodes`) |
+| `--exclude-edge-types` | Comma-separated edge types to exclude (`scope=edges`) |
+| `--edge-types` | Comma-separated edge types to include (`scope=edges`) |
+| `--property-filter` | Repeatable property filter (`scope=edges` or `scope=nodes`) |
+| `--date-filter` | Repeatable date filter (`scope=edges`) |
+
+The command rejects filter flags that the selected scope does not support.
 
 **Examples**:
 ```bash
-# Search user graph for edges (facts)
-zepctl graph search "project status" --user user_123 --scope edges
+# Search a user graph for edges (facts)
+zepctl graph search "project status" --user <user-uuid> --scope edges
 
 # Search with cross-encoder reranking
 zepctl graph search "critical decisions" --user user_123 --reranker cross_encoder
@@ -482,10 +499,10 @@ zepctl node list [flags]
 
 | Flag | Description |
 |------|-------------|
-| `--user` | List nodes for user graph |
-| `--graph` | List nodes for standalone graph |
-| `--page` | Page number (default: 1) |
-| `--page-size` | Results per page (default: 50) |
+| `--user` | User UUID for a user graph |
+| `--graph` | Graph UUID for a standalone graph |
+| `--limit` | Maximum number of results (default: 50) |
+| `--cursor` | Opaque cursor from the previous page |
 
 #### Get Node
 
@@ -521,10 +538,10 @@ zepctl edge list [flags]
 
 | Flag | Description |
 |------|-------------|
-| `--user` | List edges for user graph |
-| `--graph` | List edges for standalone graph |
-| `--page` | Page number (default: 1) |
-| `--page-size` | Results per page (default: 50) |
+| `--user` | User UUID for a user graph |
+| `--graph` | Graph UUID for a standalone graph |
+| `--limit` | Maximum number of results (default: 50) |
+| `--cursor` | Opaque cursor from the previous page |
 
 #### Get Edge
 
@@ -541,6 +558,8 @@ zepctl edge delete <uuid> [flags]
 | Flag | Description |
 |------|-------------|
 | `--force` | Skip confirmation prompt |
+| `--wait` | Wait for the deletion task |
+| `--timeout` | Maximum wait time (default: 5m) |
 
 ---
 
@@ -556,8 +575,8 @@ zepctl episode list [flags]
 |------|-------------|
 | `--user` | List episodes for user graph |
 | `--graph` | List episodes for standalone graph |
-| `--page` | Page number (default: 1) |
-| `--page-size` | Results per page (default: 50) |
+| `--limit` | Maximum number of results (default: 50) |
+| `--cursor` | Opaque cursor from the previous page |
 | `--last` | Get last N episodes (shortcut, ignores pagination) |
 
 #### Get Episode
@@ -569,10 +588,16 @@ zepctl episode get <uuid>
 #### Get Episode Mentions
 
 ```bash
-zepctl episode mentions <uuid>
+zepctl episode mentions <episode-uuid> [--limit N] [--nodes-cursor CURSOR] [--edges-cursor CURSOR]
 ```
 
-Returns nodes and edges mentioned in the specified episode.
+| Flag | Description |
+|------|-------------|
+| `--limit` | Maximum number of results in each list (default: 50) |
+| `--nodes-cursor` | Cursor for the node list |
+| `--edges-cursor` | Cursor for the edge list |
+
+The command returns nodes and edges that the episode mentions.
 
 #### Delete Episode
 
@@ -583,6 +608,8 @@ zepctl episode delete <uuid> [flags]
 | Flag | Description |
 |------|-------------|
 | `--force` | Skip confirmation prompt |
+| `--wait` | Wait for the deletion task |
+| `--timeout` | Maximum wait time (default: 5m) |
 
 ---
 
@@ -724,8 +751,8 @@ zepctl summary-instructions list [flags]
 | Flag | Description |
 |------|-------------|
 | `--user` | Filter by user ID |
-| `--page` | Page number (default: 1) |
-| `--page-size` | Results per page (default: 50) |
+| `--limit` | Maximum number of results (default: 50) |
+| `--cursor` | Opaque cursor from the previous page |
 
 #### Add Instructions
 
@@ -827,15 +854,15 @@ Every project has a virtual **All Users** group containing every active user. It
 
 ```bash
 # Groups
-zepctl user-group list [--page N] [--page-size N] [--search TERM]
+zepctl user-group list [--limit N] [--cursor CURSOR] [--search TERM]
 zepctl user-group get <group-uuid>
 zepctl user-group create --name <name> [--description <text>]
 zepctl user-group update <group-uuid> [--name <name>] [--description <text>] [--expected-version N]
 zepctl user-group delete <group-uuid> [--force]
 
 # Membership (users identified by UUID)
-zepctl user-group members list <group-uuid> [--page N] [--page-size N] [--search TERM]
-zepctl user-group members candidates <group-uuid> [--page N] [--page-size N] [--search TERM]
+zepctl user-group members list <group-uuid> [--limit N] [--cursor CURSOR] [--search TERM]
+zepctl user-group members candidates <group-uuid> [--limit N] [--cursor CURSOR] [--search TERM]
 zepctl user-group members add <group-uuid> <user-uuid>...
 zepctl user-group members remove <group-uuid> <user-uuid>...
 
@@ -896,7 +923,7 @@ zepctl user list -o json | jq '.users[].user_id'
 
 ```bash
 cat users.json | jq -c '.[]' | while read user; do
-  zepctl user create $(echo $user | jq -r '.user_id') \
+  zepctl user create --user-id "$(echo "$user" | jq -r '.user_id')" \
     --email "$(echo $user | jq -r '.email')" \
     --first-name "$(echo $user | jq -r '.first_name')"
 done
@@ -906,10 +933,10 @@ done
 
 ```bash
 # Clone user graph to test environment
-zepctl graph clone --source-user prod_user_123 --target-user test_user_123 --wait
+cloned_graph_uuid=$(zepctl graph clone --source-user <source-user-uuid> --wait -o json | jq -r '.graph.uuid')
 
 # Verify clone
-zepctl node list --user test_user_123 -o json | jq '.nodes | length'
+zepctl node list --graph "$cloned_graph_uuid" -o json | jq '.items | length'
 ```
 
 ### Monitor Batch Import
@@ -930,7 +957,7 @@ zepctl user get $USER_ID
 zepctl user threads $USER_ID
 
 # Delete user and all associated data
-zepctl user delete $USER_ID --force
+zepctl user delete $USER_UUID --force --wait
 ```
 
 ---

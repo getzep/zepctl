@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/getzep/zep-go/v3"
+	"github.com/getzep/zep-go/v4"
+	zepgraph "github.com/getzep/zep-go/v4/graph"
 	"github.com/getzep/zepctl/internal/client"
 	"github.com/getzep/zepctl/internal/output"
 	"github.com/spf13/cobra"
@@ -35,29 +36,23 @@ var observationListCmd = &cobra.Command{
 			return err
 		}
 
-		req := &zep.GraphObservationsRequest{}
+		req := &zepgraph.ObservationListRequest{}
 		if limit > 0 {
-			req.Limit = zep.Int(limit)
+			req.PageSize = zep.Int(limit)
 		}
 		if cursor != "" {
-			req.UUIDCursor = zep.String(cursor)
+			req.Cursor = zep.String(cursor)
 		}
 
-		var observations []*zep.DerivedNode
-
+		graphUUID := graphID
 		if userID != "" {
-			result, err := c.Graph.Observation.GetByUserID(context.Background(), userID, req)
-			if err != nil {
-				return fmt.Errorf("listing observations: %w", err)
-			}
-			observations = result
-		} else {
-			result, err := c.Graph.Observation.GetByGraphID(context.Background(), graphID, req)
-			if err != nil {
-				return fmt.Errorf("listing observations: %w", err)
-			}
-			observations = result
+			graphUUID = userID
 		}
+		page, err := c.Graph.Observation.List(context.Background(), graphUUID, req)
+		if err != nil {
+			return fmt.Errorf("listing observations: %w", err)
+		}
+		observations := page.Results
 
 		if output.GetFormat() == output.FormatTable {
 			tbl := output.NewTable("UUID", "NAME", "LABELS", "SUMMARY", "CREATED AT")
@@ -66,32 +61,37 @@ var observationListCmd = &cobra.Command{
 				summary := ""
 				if o.Summary != nil {
 					summary = *o.Summary
-					if len(summary) > 40 {
-						summary = summary[:40] + "..."
-					}
+					summary = truncateText(summary, 40)
 				}
-				tbl.WriteRow(o.UUID, o.Name, strings.Join(o.Labels, ","), summary, o.CreatedAt)
+				tbl.WriteRow(valueOrEmpty(o.UUID), valueOrEmpty(o.Name), strings.Join(o.Labels, ","), summary, valueOrEmpty(o.CreatedAt))
+			}
+			if page.RawResponse.Next != nil && *page.RawResponse.Next != "" {
+				output.Info("Next cursor: %s", *page.RawResponse.Next)
 			}
 			return tbl.Flush()
 		}
 
-		return output.Print(observations)
+		return output.Print(map[string]any{itemsOutputKey: observations, nextCursorOutputKey: page.RawResponse.Next})
 	},
 }
 
 var observationGetCmd = &cobra.Command{
-	Use:   "get <uuid>",
+	Use:   "get <observation-uuid>",
 	Short: "Get observation details",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		uuid := args[0]
+		graphUUID, err := graphUUIDFromFlags(cmd)
+		if err != nil {
+			return err
+		}
 
 		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
 
-		obs, err := c.Graph.Observation.Get(context.Background(), uuid)
+		obs, err := c.Graph.Observation.Get(context.Background(), graphUUID, uuid)
 		if err != nil {
 			return fmt.Errorf("getting observation: %w", err)
 		}
@@ -99,18 +99,18 @@ var observationGetCmd = &cobra.Command{
 		if output.GetFormat() == output.FormatTable {
 			tbl := output.NewTable("FIELD", "VALUE")
 			tbl.WriteHeader()
-			tbl.WriteRow("UUID", obs.UUID)
-			tbl.WriteRow("Name", obs.Name)
+			tbl.WriteRow("UUID", valueOrEmpty(obs.UUID))
+			tbl.WriteRow("Name", valueOrEmpty(obs.Name))
 			if len(obs.Labels) > 0 {
 				tbl.WriteRow("Labels", strings.Join(obs.Labels, ","))
 			}
 			if obs.Summary != nil {
 				tbl.WriteRow("Summary", *obs.Summary)
 			}
-			if len(obs.EpisodeIDs) > 0 {
-				tbl.WriteRow("Episode IDs", strings.Join(obs.EpisodeIDs, ","))
+			if len(obs.EpisodeUUIDs) > 0 {
+				tbl.WriteRow("Episode UUIDs", strings.Join(obs.EpisodeUUIDs, ","))
 			}
-			tbl.WriteRow("Created At", obs.CreatedAt)
+			tbl.WriteRow("Created At", valueOrEmpty(obs.CreatedAt))
 			return tbl.Flush()
 		}
 
@@ -123,8 +123,10 @@ func init() {
 	observationCmd.AddCommand(observationListCmd)
 	observationCmd.AddCommand(observationGetCmd)
 
-	observationListCmd.Flags().String("user", "", "List observations for user graph")
-	observationListCmd.Flags().String("graph", "", "List observations for standalone graph")
+	observationListCmd.Flags().String("user", "", "User UUID for a user graph")
+	observationListCmd.Flags().String("graph", "", "Graph UUID for a standalone graph")
 	observationListCmd.Flags().Int("limit", 50, "Maximum number of results to return")
 	observationListCmd.Flags().String("cursor", "", "UUID cursor for pagination (last UUID from previous page)")
+	observationGetCmd.Flags().String("user", "", "User UUID for a user graph")
+	observationGetCmd.Flags().String("graph", "", "Graph UUID for a standalone graph")
 }

@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/getzep/zep-go/v3"
+	"github.com/getzep/zep-go/v4"
 	"github.com/getzep/zepctl/internal/client"
 	"github.com/getzep/zepctl/internal/output"
 	"github.com/spf13/cobra"
@@ -29,7 +29,20 @@ var ontologyGetCmd = &cobra.Command{
 			return err
 		}
 
-		result, err := c.Graph.ListEntityTypes(context.Background(), &zep.GraphListEntityTypesRequest{})
+		graphUUID, _ := cmd.Flags().GetString("graph")
+		userUUID, _ := cmd.Flags().GetString("user")
+		if graphUUID != "" && userUUID != "" {
+			return fmt.Errorf("--graph and --user are mutually exclusive")
+		}
+		var result *zep.Ontology
+		if graphUUID != "" || userUUID != "" {
+			if userUUID != "" {
+				graphUUID = userUUID
+			}
+			result, err = c.Graph.GetOntology(context.Background(), graphUUID)
+		} else {
+			result, err = c.Project.GetOntology(context.Background())
+		}
 		if err != nil {
 			return fmt.Errorf("getting ontology: %w", err)
 		}
@@ -44,6 +57,11 @@ var ontologySetCmd = &cobra.Command{
 	Long:  `Set custom entity and edge types for your graph schema.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		file, _ := cmd.Flags().GetString("file")
+		graphUUID, _ := cmd.Flags().GetString("graph")
+		userUUID, _ := cmd.Flags().GetString("user")
+		if graphUUID != "" && userUUID != "" {
+			return fmt.Errorf("--graph and --user are mutually exclusive")
+		}
 
 		if file == "" {
 			return fmt.Errorf("--file is required")
@@ -75,16 +93,16 @@ var ontologySetCmd = &cobra.Command{
 		var entityTypes []*zep.EntityType
 		for name, entity := range ontologyDef.Entities {
 			entityDef := &zep.EntityType{
-				Name:        name,
-				Description: entity.Description,
+				Name:        zep.String(name),
+				Description: zep.String(entity.Description),
 			}
 			if len(entity.Fields) > 0 {
 				var properties []*zep.EntityProperty
 				for fieldName, fieldDef := range entity.Fields {
 					properties = append(properties, &zep.EntityProperty{
-						Name:        fieldName,
-						Description: fieldDef.Description,
-						Type:        zep.EntityPropertyTypeText, // Default to text type
+						Name:        zep.String(fieldName),
+						Description: zep.String(fieldDef.Description),
+						Type:        zep.EntityPropertyTypeText.Ptr(),
 					})
 				}
 				entityDef.Properties = properties
@@ -96,15 +114,15 @@ var ontologySetCmd = &cobra.Command{
 		var edgeTypes []*zep.EdgeType
 		for name, edge := range ontologyDef.Edges {
 			edgeDef := &zep.EdgeType{
-				Name:        name,
-				Description: edge.Description,
+				Name:        zep.String(name),
+				Description: zep.String(edge.Description),
 			}
 			// Build source/target constraints
 			if len(edge.SourceTypes) > 0 && len(edge.TargetTypes) > 0 {
-				var sourceTargets []*zep.EntityEdgeSourceTarget
+				var sourceTargets []*zep.EdgeSourceTarget
 				for _, source := range edge.SourceTypes {
 					for _, target := range edge.TargetTypes {
-						sourceTargets = append(sourceTargets, &zep.EntityEdgeSourceTarget{
+						sourceTargets = append(sourceTargets, &zep.EdgeSourceTarget{
 							Source: zep.String(source),
 							Target: zep.String(target),
 						})
@@ -115,12 +133,20 @@ var ontologySetCmd = &cobra.Command{
 			edgeTypes = append(edgeTypes, edgeDef)
 		}
 
-		req := &zep.EntityTypeRequest{
+		req := &zep.Ontology{
 			EntityTypes: entityTypes,
 			EdgeTypes:   edgeTypes,
 		}
 
-		result, err := c.Graph.SetEntityTypesInternal(context.Background(), req)
+		var result *zep.Ontology
+		if graphUUID != "" || userUUID != "" {
+			if userUUID != "" {
+				graphUUID = userUUID
+			}
+			result, err = c.Graph.SetOntology(context.Background(), graphUUID, req)
+		} else {
+			result, err = c.Project.SetOntology(context.Background(), req)
+		}
 		if err != nil {
 			return fmt.Errorf("setting ontology: %w", err)
 		}
@@ -165,4 +191,8 @@ func init() {
 
 	// Set flags
 	ontologySetCmd.Flags().String("file", "", "Path to ontology definition file (YAML/JSON)")
+	ontologyGetCmd.Flags().String("graph", "", "Graph UUID")
+	ontologyGetCmd.Flags().String("user", "", "User UUID for a user graph")
+	ontologySetCmd.Flags().String("graph", "", "Graph UUID")
+	ontologySetCmd.Flags().String("user", "", "User UUID for a user graph")
 }

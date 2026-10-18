@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 )
 
@@ -39,7 +38,7 @@ func NewClient(httpClient *http.Client, baseURL, projectUUID, accountUUID string
 
 func (c *Client) ListPolicySets(ctx context.Context) (*PolicySetList, error) {
 	var result PolicySetList
-	if err := c.doRequest(ctx, http.MethodGet, "/api/v2/abac/policy-sets", nil, &result); err != nil {
+	if err := c.doRequest(ctx, http.MethodGet, "/api/v4/abac/policy-sets", nil, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -47,7 +46,7 @@ func (c *Client) ListPolicySets(ctx context.Context) (*PolicySetList, error) {
 
 func (c *Client) GetPolicySet(ctx context.Context, uuid string) (*PolicySet, error) {
 	var result PolicySet
-	if err := c.doRequest(ctx, http.MethodGet, "/api/v2/abac/policy-sets/"+uuid, nil, &result); err != nil {
+	if err := c.doRequest(ctx, http.MethodGet, "/api/v4/abac/policy-sets/"+uuid, nil, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -56,7 +55,7 @@ func (c *Client) GetPolicySet(ctx context.Context, uuid string) (*PolicySet, err
 func (c *Client) CreatePolicySet(ctx context.Context, yamlContent string) (*PolicySet, error) {
 	body := map[string]string{"yaml": yamlContent}
 	var result PolicySet
-	if err := c.doRequest(ctx, http.MethodPost, "/api/v2/abac/policy-sets", body, &result); err != nil {
+	if err := c.doRequest(ctx, http.MethodPost, "/api/v4/abac/policy-sets", body, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -65,20 +64,20 @@ func (c *Client) CreatePolicySet(ctx context.Context, yamlContent string) (*Poli
 func (c *Client) UpdatePolicySet(ctx context.Context, uuid, yamlContent string) (*PolicySet, error) {
 	body := map[string]string{"yaml": yamlContent}
 	var result PolicySet
-	if err := c.doRequest(ctx, http.MethodPatch, "/api/v2/abac/policy-sets/"+uuid, body, &result); err != nil {
+	if err := c.doRequest(ctx, http.MethodPatch, "/api/v4/abac/policy-sets/"+uuid, body, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
 }
 
 func (c *Client) DeletePolicySet(ctx context.Context, uuid string) error {
-	return c.doRequest(ctx, http.MethodDelete, "/api/v2/abac/policy-sets/"+uuid, nil, nil)
+	return c.doRequest(ctx, http.MethodDelete, "/api/v4/abac/policy-sets/"+uuid, nil, nil)
 }
 
 func (c *Client) ValidatePolicySet(ctx context.Context, yamlContent string) (*ValidationResult, error) {
 	body := map[string]string{"yaml": yamlContent}
 	var result ValidationResult
-	if err := c.doRequest(ctx, http.MethodPost, "/api/v2/abac/policy-sets/validate", body, &result); err != nil {
+	if err := c.doRequest(ctx, http.MethodPost, "/api/v4/abac/policy-sets/validate", body, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -88,7 +87,7 @@ func (c *Client) ValidatePolicySet(ctx context.Context, yamlContent string) (*Va
 
 func (c *Client) GetAPIKeySettings(ctx context.Context, keyUUID string) (*APIKeySettings, error) {
 	var result APIKeySettings
-	path := fmt.Sprintf("/api/v2/abac/api-keys/%s/settings", keyUUID)
+	path := fmt.Sprintf("/api/v4/abac/api-keys/%s/settings", keyUUID)
 	if err := c.doRequest(ctx, http.MethodGet, path, nil, &result); err != nil {
 		return nil, err
 	}
@@ -98,7 +97,7 @@ func (c *Client) GetAPIKeySettings(ctx context.Context, keyUUID string) (*APIKey
 func (c *Client) SetAPIKeySettings(ctx context.Context, keyUUID, mode string) (*APIKeySettings, error) {
 	body := map[string]string{"abac_mode": mode}
 	var result APIKeySettings
-	path := fmt.Sprintf("/api/v2/abac/api-keys/%s/settings", keyUUID)
+	path := fmt.Sprintf("/api/v4/abac/api-keys/%s/settings", keyUUID)
 	if err := c.doRequest(ctx, http.MethodPatch, path, body, &result); err != nil {
 		return nil, err
 	}
@@ -110,7 +109,7 @@ func (c *Client) SetAPIKeySettings(ctx context.Context, keyUUID, mode string) (*
 // ListAPIKeys returns the API keys for the current project.
 func (c *Client) ListAPIKeys(ctx context.Context) (*ProjectKeysResponse, error) {
 	var result ProjectKeysResponse
-	if err := c.doRequest(ctx, http.MethodGet, "/api/v2/abac/api-keys", nil, &result); err != nil {
+	if err := c.doRequest(ctx, http.MethodGet, "/api/v4/abac/api-keys", nil, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -120,7 +119,7 @@ func (c *Client) ListAPIKeys(ctx context.Context) (*ProjectKeysResponse, error) 
 
 func (c *Client) ListAPIKeyPolicySets(ctx context.Context, keyUUID string) (*AttachedPolicySets, error) {
 	var result AttachedPolicySets
-	path := fmt.Sprintf("/api/v2/abac/api-keys/%s/policy-sets", keyUUID)
+	path := fmt.Sprintf("/api/v4/abac/api-keys/%s/policy-sets", keyUUID)
 	if err := c.doRequest(ctx, http.MethodGet, path, nil, &result); err != nil {
 		return nil, err
 	}
@@ -130,7 +129,7 @@ func (c *Client) ListAPIKeyPolicySets(ctx context.Context, keyUUID string) (*Att
 func (c *Client) AttachPolicySet(ctx context.Context, keyUUID, policySetUUID string) (*AttachedPolicySets, error) {
 	body := map[string]string{"policy_set_uuid": policySetUUID}
 	var result AttachedPolicySets
-	path := fmt.Sprintf("/api/v2/abac/api-keys/%s/policy-sets", keyUUID)
+	path := fmt.Sprintf("/api/v4/abac/api-keys/%s/policy-sets", keyUUID)
 	if err := c.doRequest(ctx, http.MethodPost, path, body, &result); err != nil {
 		return nil, err
 	}
@@ -139,122 +138,8 @@ func (c *Client) AttachPolicySet(ctx context.Context, keyUUID, policySetUUID str
 
 func (c *Client) DetachPolicySet(ctx context.Context, keyUUID, policySetUUID string) (*AttachedPolicySets, error) {
 	var result AttachedPolicySets
-	path := fmt.Sprintf("/api/v2/abac/api-keys/%s/policy-sets/%s", keyUUID, policySetUUID)
+	path := fmt.Sprintf("/api/v4/abac/api-keys/%s/policy-sets/%s", keyUUID, policySetUUID)
 	if err := c.doRequest(ctx, http.MethodDelete, path, nil, &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
-}
-
-// --- User Groups ---
-
-func (c *Client) ListUserGroups(ctx context.Context, page, pageSize int, search string) (*UserGroupList, error) {
-	var result UserGroupList
-	path := "/api/v2/user-groups?" + paginationQuery(page, pageSize, search)
-	if err := c.doRequest(ctx, http.MethodGet, path, nil, &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
-}
-
-func (c *Client) GetUserGroup(ctx context.Context, groupUUID string) (*UserGroup, error) {
-	var result UserGroup
-	if err := c.doRequest(ctx, http.MethodGet, userGroupPath(groupUUID), nil, &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
-}
-
-func (c *Client) CreateUserGroup(ctx context.Context, name, description string) (*UserGroup, error) {
-	body := map[string]string{"name": name}
-	if description != "" {
-		body["description"] = description
-	}
-	var result UserGroup
-	if err := c.doRequest(ctx, http.MethodPost, "/api/v2/user-groups", body, &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
-}
-
-// UpdateUserGroup patches a managed group's metadata. expectedVersion is
-// the optimistic-concurrency token; a stale value returns 409.
-func (c *Client) UpdateUserGroup(
-	ctx context.Context, groupUUID string, name, description *string, expectedVersion int,
-) (*UserGroup, error) {
-	body := struct {
-		Name            *string `json:"name,omitempty"`
-		Description     *string `json:"description,omitempty"`
-		ExpectedVersion int     `json:"expected_version"`
-	}{Name: name, Description: description, ExpectedVersion: expectedVersion}
-	var result UserGroup
-	if err := c.doRequest(ctx, http.MethodPatch, userGroupPath(groupUUID), body, &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
-}
-
-func (c *Client) DeleteUserGroup(ctx context.Context, groupUUID string) error {
-	return c.doRequest(ctx, http.MethodDelete, userGroupPath(groupUUID), nil, nil)
-}
-
-func (c *Client) ListUserGroupMembers(
-	ctx context.Context, groupUUID string, page, pageSize int, search string,
-) (*GroupMembers, error) {
-	return c.listGroupUsers(ctx, userGroupPath(groupUUID)+"/members", page, pageSize, search)
-}
-
-// ListUserGroupMemberCandidates lists active Users that are not already
-// members of the group. It returns 409 for the virtual All Users group,
-// whose membership cannot be mutated.
-func (c *Client) ListUserGroupMemberCandidates(
-	ctx context.Context, groupUUID string, page, pageSize int, search string,
-) (*GroupMembers, error) {
-	return c.listGroupUsers(ctx, userGroupPath(groupUUID)+"/members/candidates", page, pageSize, search)
-}
-
-func (c *Client) listGroupUsers(
-	ctx context.Context, basePath string, page, pageSize int, search string,
-) (*GroupMembers, error) {
-	var result GroupMembers
-	path := basePath + "?" + paginationQuery(page, pageSize, search)
-	if err := c.doRequest(ctx, http.MethodGet, path, nil, &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
-}
-
-func (c *Client) AddUserGroupMembers(
-	ctx context.Context, groupUUID string, userUUIDs []string,
-) (*MembershipResult, error) {
-	return c.mutateUserGroupMembers(ctx, userGroupPath(groupUUID)+"/members", userUUIDs)
-}
-
-// RemoveUserGroupMembers removes one or more memberships through the
-// bulk endpoint, which is idempotent for absent memberships.
-func (c *Client) RemoveUserGroupMembers(
-	ctx context.Context, groupUUID string, userUUIDs []string,
-) (*MembershipResult, error) {
-	return c.mutateUserGroupMembers(ctx, userGroupPath(groupUUID)+"/members/bulk-remove", userUUIDs)
-}
-
-func (c *Client) mutateUserGroupMembers(
-	ctx context.Context, path string, userUUIDs []string,
-) (*MembershipResult, error) {
-	body := map[string][]string{"user_uuids": userUUIDs}
-	var result MembershipResult
-	if err := c.doRequest(ctx, http.MethodPost, path, body, &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
-}
-
-// ListUserGroupsForUser returns the User's effective groups: All Users
-// plus every active managed membership.
-func (c *Client) ListUserGroupsForUser(ctx context.Context, userUUID string) (*UserGroupsForUser, error) {
-	var result UserGroupsForUser
-	path := "/api/v2/user-groups/users/" + url.PathEscape(userUUID)
-	if err := c.doRequest(ctx, http.MethodGet, path, nil, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -263,45 +148,65 @@ func (c *Client) ListUserGroupsForUser(ctx context.Context, userUUID string) (*U
 // --- User Group Policy Attachments ---
 
 func (c *Client) ListUserGroupPolicySets(ctx context.Context, groupUUID string) (*AttachedPolicySets, error) {
-	var result AttachedPolicySets
-	if err := c.doRequest(ctx, http.MethodGet, userGroupPolicySetsPath(groupUUID), nil, &result); err != nil {
-		return nil, err
+	all := make([]PolicySetSummary, 0)
+	cursor := ""
+	for {
+		path := userGroupPolicySetsPath(groupUUID) + "?page_size=200"
+		if cursor != "" {
+			path += "&cursor=" + url.QueryEscape(cursor)
+		}
+
+		var page userGroupPolicySetPage
+		if err := c.doRequest(ctx, http.MethodGet, path, nil, &page); err != nil {
+			return nil, err
+		}
+		all = append(all, page.Items...)
+		if page.NextCursor == "" {
+			break
+		}
+		cursor = page.NextCursor
 	}
-	return &result, nil
+	return &AttachedPolicySets{PolicySets: all}, nil
 }
 
 func (c *Client) AttachUserGroupPolicySet(
 	ctx context.Context, groupUUID, policySetUUID string,
 ) (*AttachedPolicySets, error) {
 	body := map[string]string{"policy_set_uuid": policySetUUID}
-	var result AttachedPolicySets
+	var result userGroupPolicySetList
 	if err := c.doRequest(ctx, http.MethodPost, userGroupPolicySetsPath(groupUUID), body, &result); err != nil {
 		return nil, err
 	}
-	return &result, nil
+	if result.Items == nil {
+		result.Items = make([]PolicySetSummary, 0)
+	}
+	return &AttachedPolicySets{PolicySets: result.Items}, nil
 }
 
 func (c *Client) DetachUserGroupPolicySet(
 	ctx context.Context, groupUUID, policySetUUID string,
 ) (*AttachedPolicySets, error) {
-	var result AttachedPolicySets
 	path := userGroupPolicySetsPath(groupUUID) + "/" + url.PathEscape(policySetUUID)
-	if err := c.doRequest(ctx, http.MethodDelete, path, nil, &result); err != nil {
+	if err := c.doRequest(ctx, http.MethodDelete, path, nil, nil); err != nil {
 		return nil, err
 	}
-	return &result, nil
+	result, err := c.ListUserGroupPolicySets(ctx, groupUUID)
+	if err != nil {
+		return nil, fmt.Errorf("policy set detached; listing remaining policy sets: %w", err)
+	}
+	return result, nil
 }
 
 // --- Policy Evaluation (Dry-Run) ---
 
-// EvaluatePolicy posts to /api/v2/abac/policies/evaluate and returns the
+// EvaluatePolicy posts to /api/v4/abac/policies/evaluate and returns the
 // concise decision plus the unmodified server body in RawJSON. resource
 // is optional and rejected for API key principals.
 func (c *Client) EvaluatePolicy(
 	ctx context.Context, principal Principal, action string, resource *Resource,
 ) (*EvaluateResponse, error) {
 	raw, err := c.doRequestRaw(
-		ctx, http.MethodPost, "/api/v2/abac/policies/evaluate", dryRunBody(principal, action, resource),
+		ctx, http.MethodPost, "/api/v4/abac/policies/evaluate", dryRunBody(principal, action, resource),
 	)
 	if err != nil {
 		return nil, err
@@ -314,14 +219,14 @@ func (c *Client) EvaluatePolicy(
 	return &result, nil
 }
 
-// ExplainPolicy posts to /api/v2/abac/policies/explain and returns the
+// ExplainPolicy posts to /api/v4/abac/policies/explain and returns the
 // decision plus a structured trace. RawJSON preserves any
 // trace fields the typed shape does not yet render.
 func (c *Client) ExplainPolicy(
 	ctx context.Context, principal Principal, action string, resource *Resource,
 ) (*ExplainResponse, error) {
 	raw, err := c.doRequestRaw(
-		ctx, http.MethodPost, "/api/v2/abac/policies/explain", dryRunBody(principal, action, resource),
+		ctx, http.MethodPost, "/api/v4/abac/policies/explain", dryRunBody(principal, action, resource),
 	)
 	if err != nil {
 		return nil, err
@@ -352,24 +257,8 @@ func dryRunBody(principal Principal, action string, resource *Resource) any {
 	return body
 }
 
-func userGroupPath(groupUUID string) string {
-	return "/api/v2/user-groups/" + url.PathEscape(groupUUID)
-}
-
 func userGroupPolicySetsPath(groupUUID string) string {
-	return "/api/v2/abac/user-groups/" + url.PathEscape(groupUUID) + "/policy-sets"
-}
-
-// paginationQuery builds the query string for the paginated UserGroup
-// endpoints. pageSize is always sent because the API requires it.
-func paginationQuery(page, pageSize int, search string) string {
-	query := url.Values{}
-	query.Set("pageNumber", strconv.Itoa(page))
-	query.Set("pageSize", strconv.Itoa(pageSize))
-	if search != "" {
-		query.Set("search", search)
-	}
-	return query.Encode()
+	return "/api/v4/user-groups/" + url.PathEscape(groupUUID) + "/policy-sets"
 }
 
 // --- Internal ---
@@ -434,9 +323,26 @@ func (c *Client) doRequestRaw(ctx context.Context, method, path string, body any
 
 func decodeError(statusCode int, raw []byte) error {
 	var errResp struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+		Code    string `json:"code"`
 		Message string `json:"message"`
 	}
-	if err := json.Unmarshal(raw, &errResp); err != nil || errResp.Message == "" {
+	if err := json.Unmarshal(raw, &errResp); err != nil {
+		return &APIError{
+			StatusCode: statusCode,
+			Message:    fmt.Sprintf("API error (HTTP %d)", statusCode),
+		}
+	}
+	code := errResp.Error.Code
+	message := errResp.Error.Message
+	if message == "" {
+		code = errResp.Code
+		message = errResp.Message
+	}
+	if message == "" {
 		return &APIError{
 			StatusCode: statusCode,
 			Message:    fmt.Sprintf("API error (HTTP %d)", statusCode),
@@ -444,6 +350,7 @@ func decodeError(statusCode int, raw []byte) error {
 	}
 	return &APIError{
 		StatusCode: statusCode,
-		Message:    errResp.Message,
+		Code:       code,
+		Message:    message,
 	}
 }

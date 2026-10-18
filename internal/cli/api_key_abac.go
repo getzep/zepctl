@@ -325,7 +325,7 @@ func dryRunResource(cmd *cobra.Command) (*abac.Resource, error) {
 	if err := validateUUID(graphUUID, "graph"); err != nil {
 		return nil, err
 	}
-	return &abac.Resource{Type: abac.ResourceGraph, UUID: graphUUID}, nil
+	return &abac.Resource{Type: abac.ResourceGraph, CanonicalGraphUUID: graphUUID}, nil
 }
 
 func renderEvaluateTable(w io.Writer, r *abac.EvaluateResponse) {
@@ -365,7 +365,7 @@ func renderPrincipalAndResource(w io.Writer, principal *abac.Principal, resource
 		fmt.Fprintf(w, "Principal:              %s %s\n", principal.Type, principal.UUID)
 	}
 	if resource != nil {
-		fmt.Fprintf(w, "Resource:               %s %s\n", resource.Type, resource.UUID)
+		fmt.Fprintf(w, "Resource:               %s %s\n", resource.Type, resource.CanonicalGraphUUID)
 	}
 }
 

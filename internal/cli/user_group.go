@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/getzep/zep-go/v4"
 	"github.com/spf13/cobra"
 
 	"github.com/getzep/zepctl/internal/abac"
@@ -26,19 +27,33 @@ var userGroupListCmd = &cobra.Command{
 	Use:   listCmdUse,
 	Short: "List UserGroups in the current project",
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		ac, err := newABACClient(cmd)
+		c, err := client.NewWithCredential(cmd.Context(), client.CredentialBearer)
 		if err != nil {
 			return err
 		}
-		page, pageSize, search := paginationFlags(cmd)
-		result, err := ac.ListUserGroups(cmd.Context(), page, pageSize, search)
+		limit, _ := cmd.Flags().GetInt("limit")
+		cursor, _ := cmd.Flags().GetString("cursor")
+		search, _ := cmd.Flags().GetString("search")
+		req := &zep.UserGroupListRequest{
+			Body: &zep.SearchListRequest{Search: zep.String(search)},
+		}
+		if limit > 0 {
+			req.PageSize = zep.Int(limit)
+		}
+		if cursor != "" {
+			req.Cursor = zep.String(cursor)
+		}
+		page, err := c.UserGroup.List(cmd.Context(), req)
 		if err != nil {
 			return fmt.Errorf("listing user groups: %w", err)
 		}
 		if output.GetFormat() == output.FormatTable {
-			return renderUserGroupTable(result.UserGroups)
+			if page.RawResponse.Next != nil && *page.RawResponse.Next != "" {
+				output.Info("Next cursor: %s", *page.RawResponse.Next)
+			}
+			return renderUserGroupTable(page.Results)
 		}
-		return output.Print(result)
+		return output.Print(map[string]any{itemsOutputKey: page.Results, nextCursorOutputKey: page.RawResponse.Next})
 	},
 }
 
@@ -50,13 +65,13 @@ var userGroupGetCmd = &cobra.Command{
 		if err := validateUUID(args[0], userGroupLabel); err != nil {
 			return err
 		}
-		ac, err := newABACClient(cmd)
+		c, err := client.NewWithCredential(cmd.Context(), client.CredentialBearer)
 		if err != nil {
 			return err
 		}
-		group, err := ac.GetUserGroup(cmd.Context(), args[0])
+		group, err := c.UserGroup.Get(cmd.Context(), args[0])
 		if err != nil {
-			return userGroupError(err, "getting user group", args[0])
+			return fmt.Errorf("getting user group %s: %w", args[0], err)
 		}
 		if output.GetFormat() == output.FormatTable {
 			renderUserGroup(cmd, group)
@@ -72,16 +87,20 @@ var userGroupCreateCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		name, _ := cmd.Flags().GetString("name")
 		description, _ := cmd.Flags().GetString("description")
-		ac, err := newABACClient(cmd)
+		c, err := client.NewWithCredential(cmd.Context(), client.CredentialBearer)
 		if err != nil {
 			return err
 		}
-		group, err := ac.CreateUserGroup(cmd.Context(), name, description)
+		request := &zep.CreateUserGroupRequest{Name: name}
+		if description != "" {
+			request.Description = zep.String(description)
+		}
+		group, err := c.UserGroup.Create(cmd.Context(), request)
 		if err != nil {
 			return fmt.Errorf("creating user group: %w", err)
 		}
 		if output.GetFormat() == output.FormatTable {
-			output.Info("Created user group %q (%s)", group.Name, truncateUUID(group.UUID))
+			output.Info("Created user group %q (%s)", valueOrEmpty(group.Name), truncateUUID(valueOrEmpty(group.UUID)))
 			return nil
 		}
 		return output.Print(group)
@@ -104,20 +123,25 @@ var userGroupUpdateCmd = &cobra.Command{
 		if name == nil && description == nil {
 			return fmt.Errorf("at least one of --name or --description is required")
 		}
-		ac, err := newABACClient(cmd)
+		c, err := client.NewWithCredential(cmd.Context(), client.CredentialBearer)
 		if err != nil {
 			return err
 		}
-		expectedVersion, err := resolveExpectedVersion(cmd, ac, args[0])
+		expectedVersion, err := resolveExpectedVersion(cmd, c, args[0])
 		if err != nil {
 			return err
 		}
-		group, err := ac.UpdateUserGroup(cmd.Context(), args[0], name, description, expectedVersion)
+		request := &zep.PatchUserGroupRequest{
+			ExpectedVersion: zep.Int(expectedVersion),
+			Name:            name,
+			Description:     description,
+		}
+		group, err := c.UserGroup.Update(cmd.Context(), args[0], request)
 		if err != nil {
-			return userGroupError(err, "updating user group", args[0])
+			return fmt.Errorf("updating user group %s: %w", args[0], err)
 		}
 		if output.GetFormat() == output.FormatTable {
-			output.Info("Updated user group %q (version %s)", group.Name, formatVersion(group.Version))
+			output.Info("Updated user group %q (version %s)", valueOrEmpty(group.Name), formatVersion(group.Version))
 			return nil
 		}
 		return output.Print(group)
@@ -137,12 +161,12 @@ var userGroupDeleteCmd = &cobra.Command{
 		if err != nil || !confirmed {
 			return err
 		}
-		ac, err := newABACClient(cmd)
+		c, err := client.NewWithCredential(cmd.Context(), client.CredentialBearer)
 		if err != nil {
 			return err
 		}
-		if err := ac.DeleteUserGroup(cmd.Context(), args[0]); err != nil {
-			return userGroupError(err, "deleting user group", args[0])
+		if err := c.UserGroup.Delete(cmd.Context(), args[0]); err != nil {
+			return fmt.Errorf("deleting user group %s: %w", args[0], err)
 		}
 		output.Info("Deleted user group %s", args[0])
 		return nil
@@ -317,30 +341,58 @@ func runMemberList(cmd *cobra.Command, groupUUID string, candidates bool) error 
 	if err := validateUUID(groupUUID, userGroupLabel); err != nil {
 		return err
 	}
-	ac, err := newABACClient(cmd)
+	c, err := client.NewWithCredential(cmd.Context(), client.CredentialBearer)
 	if err != nil {
 		return err
 	}
-	page, pageSize, search := paginationFlags(cmd)
+	limit, _ := cmd.Flags().GetInt("limit")
+	cursor, _ := cmd.Flags().GetString("cursor")
+	search, _ := cmd.Flags().GetString("search")
+	body := &zep.SearchListRequest{Search: zep.String(search)}
 	action := "listing members"
-	list := ac.ListUserGroupMembers
+	var results []*zep.User
+	var nextCursor *string
 	if candidates {
 		action = "listing member candidates"
-		list = ac.ListUserGroupMemberCandidates
-	}
-	result, err := list(cmd.Context(), groupUUID, page, pageSize, search)
-	if err != nil {
-		return userGroupError(err, action, groupUUID)
+		request := &zep.UserGroupListMemberCandidatesRequest{Body: body}
+		if limit > 0 {
+			request.PageSize = zep.Int(limit)
+		}
+		if cursor != "" {
+			request.Cursor = zep.String(cursor)
+		}
+		page, err := c.UserGroup.ListMemberCandidates(cmd.Context(), groupUUID, request)
+		if err != nil {
+			return fmt.Errorf("%s for user group %s: %w", action, groupUUID, err)
+		}
+		results, nextCursor = page.Results, page.RawResponse.Next
+	} else {
+		request := &zep.UserGroupListMembersRequest{Body: body}
+		if limit > 0 {
+			request.PageSize = zep.Int(limit)
+		}
+		if cursor != "" {
+			request.Cursor = zep.String(cursor)
+		}
+		page, err := c.UserGroup.ListMembers(cmd.Context(), groupUUID, request)
+		if err != nil {
+			return fmt.Errorf("%s for user group %s: %w", action, groupUUID, err)
+		}
+		results, nextCursor = page.Results, page.RawResponse.Next
 	}
 	if output.GetFormat() == output.FormatTable {
 		tbl := output.NewTable("UUID", "USER ID", "EMAIL", "FIRST NAME", "LAST NAME")
 		tbl.WriteHeader()
-		for _, u := range result.Users {
-			tbl.WriteRow(u.UUID, u.UserID, u.Email, u.FirstName, u.LastName)
+		for _, u := range results {
+			tbl.WriteRow(valueOrEmpty(u.UUID), valueOrEmpty(u.UserID), valueOrEmpty(u.Email),
+				valueOrEmpty(u.FirstName), valueOrEmpty(u.LastName))
+		}
+		if nextCursor != nil && *nextCursor != "" {
+			output.Info("Next cursor: %s", *nextCursor)
 		}
 		return tbl.Flush()
 	}
-	return output.Print(result)
+	return output.Print(map[string]any{itemsOutputKey: results, nextCursorOutputKey: nextCursor})
 }
 
 func runMemberMutation(cmd *cobra.Command, args []string, add bool) error {
@@ -353,19 +405,18 @@ func runMemberMutation(cmd *cobra.Command, args []string, add bool) error {
 			return err
 		}
 	}
-	ac, err := newABACClient(cmd)
+	c, err := client.NewWithCredential(cmd.Context(), client.CredentialBearer)
 	if err != nil {
 		return err
 	}
-	var result *abac.MembershipResult
+	request := &zep.MutateMembersRequest{UserUUIDs: userUUIDs}
+	var result *zep.MembershipMutationResult
 	if add {
-		result, err = ac.AddUserGroupMembers(cmd.Context(), args[0], userUUIDs)
+		result, err = c.UserGroup.AddMembers(cmd.Context(), args[0], request)
 	} else {
-		result, err = ac.RemoveUserGroupMembers(cmd.Context(), args[0], userUUIDs)
+		result, err = c.UserGroup.RemoveMembers(cmd.Context(), args[0], request)
 	}
 	if err != nil {
-		// The group and every supplied user share one 404, so the
-		// server's message has to name the object that was not found.
 		if add {
 			return fmt.Errorf("adding members: %w", err)
 		}
@@ -374,10 +425,10 @@ func runMemberMutation(cmd *cobra.Command, args []string, add bool) error {
 	if output.GetFormat() == output.FormatTable {
 		if add {
 			output.Info("Added %d member(s) to user group %s (%d already a member)",
-				result.Added, args[0], result.NoOp)
+				intOrZero(result.AddedCount), args[0], intOrZero(result.NoOpCount))
 		} else {
 			output.Info("Removed %d member(s) from user group %s (%d not a member)",
-				result.Removed, args[0], result.NoOp)
+				intOrZero(result.RemovedCount), args[0], intOrZero(result.NoOpCount))
 		}
 		return nil
 	}
@@ -387,14 +438,14 @@ func runMemberMutation(cmd *cobra.Command, args []string, add bool) error {
 // resolveExpectedVersion returns the --expected-version value, or the
 // group's current version when the flag is absent. A group without a
 // version is the virtual All Users group, which cannot be updated.
-func resolveExpectedVersion(cmd *cobra.Command, ac *abac.Client, groupUUID string) (int, error) {
+func resolveExpectedVersion(cmd *cobra.Command, c *client.Client, groupUUID string) (int, error) {
 	if cmd.Flags().Changed("expected-version") {
 		expectedVersion, _ := cmd.Flags().GetInt("expected-version")
 		return expectedVersion, nil
 	}
-	group, err := ac.GetUserGroup(cmd.Context(), groupUUID)
+	group, err := c.UserGroup.Get(cmd.Context(), groupUUID)
 	if err != nil {
-		return 0, userGroupError(err, "reading current version of user group", groupUUID)
+		return 0, fmt.Errorf("reading current version of user group %s: %w", groupUUID, err)
 	}
 	if group.Version == nil {
 		return 0, fmt.Errorf("user group %s is not updatable: the All Users group is immutable", groupUUID)
@@ -410,18 +461,9 @@ func validateAttachmentUUIDs(args []string) error {
 }
 
 func addPaginationFlags(cmd *cobra.Command, searchUsage string) {
-	cmd.Flags().Int("page", 1, "Page number")
-	cmd.Flags().Int("page-size", 50, "Results per page")
+	cmd.Flags().Int("limit", 50, "Maximum number of results")
+	cmd.Flags().String("cursor", "", "Cursor from the previous page")
 	cmd.Flags().String("search", "", searchUsage)
-}
-
-// paginationFlags reads the shared list flags. pageSize is always sent
-// because the API requires it.
-func paginationFlags(cmd *cobra.Command) (page, pageSize int, search string) {
-	page, _ = cmd.Flags().GetInt("page")
-	pageSize, _ = cmd.Flags().GetInt("page-size")
-	search, _ = cmd.Flags().GetString("search")
-	return page, pageSize, search
 }
 
 // changedStringFlag returns a pointer to the flag value only when the
@@ -444,35 +486,41 @@ func formatVersion(version *int) string {
 	return strconv.Itoa(*version)
 }
 
-func renderUserGroupTable(groups []abac.UserGroup) error {
-	tbl := output.NewTable("UUID", "NAME", "KIND", "MEMBERS", "POLICY SETS", "VERSION")
+func renderUserGroupTable(groups []*zep.UserGroup) error {
+	tbl := output.NewTable("UUID", "NAME", "KIND", "VERSION")
 	tbl.WriteHeader()
 	for _, g := range groups {
-		tbl.WriteRow(g.UUID, g.Name, g.Kind,
-			strconv.Itoa(g.MemberCount), strconv.Itoa(g.AttachedPolicyCount), formatVersion(g.Version))
+		kind := "managed"
+		if g.Version == nil {
+			kind = "all_users"
+		}
+		tbl.WriteRow(valueOrEmpty(g.UUID), valueOrEmpty(g.Name), kind, formatVersion(g.Version))
 	}
 	return tbl.Flush()
 }
 
-func renderUserGroup(cmd *cobra.Command, group *abac.UserGroup) {
+func renderUserGroup(cmd *cobra.Command, group *zep.UserGroup) {
 	out := cmd.OutOrStdout()
-	fmt.Fprintf(out, "UUID:          %s\n", group.UUID)
-	fmt.Fprintf(out, "Name:          %s\n", group.Name)
-	if group.Description != "" {
-		fmt.Fprintf(out, "Description:   %s\n", group.Description)
+	fmt.Fprintf(out, "UUID:          %s\n", valueOrEmpty(group.UUID))
+	fmt.Fprintf(out, "Name:          %s\n", valueOrEmpty(group.Name))
+	if group.Description != nil {
+		fmt.Fprintf(out, "Description:   %s\n", *group.Description)
 	}
-	fmt.Fprintf(out, "Kind:          %s\n", group.Kind)
-	fmt.Fprintf(out, "Members:       %d\n", group.MemberCount)
-	fmt.Fprintf(out, "Policy sets:   %d\n", group.AttachedPolicyCount)
+	kind := "managed"
+	if group.Version == nil {
+		kind = "all_users"
+	}
+	fmt.Fprintf(out, "Kind:          %s\n", kind)
 	fmt.Fprintf(out, "Version:       %s\n", formatVersion(group.Version))
-	fmt.Fprintf(out, "Project:       %s\n", group.ProjectUUID)
 	fmt.Fprintf(out, "Created:       %s\n", formatTimestamp(group.CreatedAt))
 	fmt.Fprintf(out, "Updated:       %s\n", formatTimestamp(group.UpdatedAt))
 }
 
-func formatTimestamp(value *string) string {
+func formatTimestamp(value *string) string { return valueOrEmpty(value) }
+
+func intOrZero(value *int) int {
 	if value == nil {
-		return "-"
+		return 0
 	}
 	return *value
 }

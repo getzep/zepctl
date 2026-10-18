@@ -8,8 +8,8 @@ import (
 	"regexp"
 	"strings"
 
-	zepclient "github.com/getzep/zep-go/v3/client"
-	"github.com/getzep/zep-go/v3/option"
+	zepclient "github.com/getzep/zep-go/v4/client"
+	"github.com/getzep/zep-go/v4/option"
 	"github.com/getzep/zepctl/internal/auth"
 	"github.com/getzep/zepctl/internal/config"
 	"github.com/getzep/zepctl/internal/keyring"
@@ -116,26 +116,20 @@ func NewWithCredential(ctx context.Context, credType CredentialType) (*Client, e
 	return zepclient.NewClient(opts...), nil
 }
 
-// sdkAPIVersionPathRE matches an /api/vN segment anywhere in a URL's path,
-// e.g. /api/v2 or /api/v2/. Used to decide whether normalizeSDKBaseURL
-// should append the version suffix the zep-go SDK requires.
+// sdkAPIVersionPathRE matches an /api/vN segment anywhere in a URL path.
 var sdkAPIVersionPathRE = regexp.MustCompile(`(?i)/api/v\d+(/|$)`)
 
-// normalizeSDKBaseURL appends /api/v2 to a base URL that doesn't already
-// carry an /api/vN segment, so users can configure friendly hosts like
-// https://api.getzep.com without having to know the SDK's expected path
-// prefix. URLs that already include an /api/vN segment are
-// returned unchanged (other than trimming trailing slashes), preserving the
-// caller's chosen version.
+// normalizeSDKBaseURL rewrites an explicit API version to /api/v4 or appends
+// /api/v4 when the URL has no API version.
 func normalizeSDKBaseURL(raw string) string {
 	if raw == "" {
 		return raw
 	}
 	trimmed := strings.TrimRight(raw, "/")
 	if sdkAPIVersionPathRE.MatchString(trimmed) {
-		return trimmed
+		return sdkAPIVersionPathRE.ReplaceAllString(trimmed, `/api/v4${1}`)
 	}
-	return trimmed + "/api/v2"
+	return trimmed + "/api/v4"
 }
 
 // newBearerClient returns an *http.Client that automatically attaches

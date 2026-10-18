@@ -38,7 +38,7 @@ func TestClient_ListPolicySets(t *testing.T) {
 	assert.Len(t, result.PolicySets, 2)
 	assert.Equal(t, "policy_one", result.PolicySets[0].Name)
 	assert.Equal(t, http.MethodGet, gotReq.Method)
-	assert.Equal(t, "/api/v2/abac/policy-sets", gotReq.URL.Path)
+	assert.Equal(t, "/api/v4/abac/policy-sets", gotReq.URL.Path)
 	assert.Equal(t, "test-project-uuid", gotReq.Header.Get("X-Zep-Project"))
 }
 
@@ -67,7 +67,7 @@ func TestClient_SendsAccountHeader(t *testing.T) {
 
 func TestClient_GetPolicySet(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/api/v2/abac/policy-sets/ps-uuid-1", r.URL.Path)
+		assert.Equal(t, "/api/v4/abac/policy-sets/ps-uuid-1", r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(PolicySet{
 			UUID: "ps-uuid-1", Name: "test_policy", Mode: "report_only", Version: 3,
@@ -108,7 +108,7 @@ func TestClient_CreatePolicySet(t *testing.T) {
 func TestClient_UpdatePolicySet(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPatch, r.Method)
-		assert.Equal(t, "/api/v2/abac/policy-sets/ps-1", r.URL.Path)
+		assert.Equal(t, "/api/v4/abac/policy-sets/ps-1", r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(PolicySet{
 			UUID: "ps-1", Name: "updated", Mode: "enforce", Version: 4,
@@ -124,7 +124,7 @@ func TestClient_UpdatePolicySet(t *testing.T) {
 func TestClient_DeletePolicySet(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodDelete, r.Method)
-		assert.Equal(t, "/api/v2/abac/policy-sets/ps-1", r.URL.Path)
+		assert.Equal(t, "/api/v4/abac/policy-sets/ps-1", r.URL.Path)
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer srv.Close()
@@ -136,7 +136,7 @@ func TestClient_DeletePolicySet(t *testing.T) {
 func TestClient_ValidatePolicySet_Valid(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
-		assert.Equal(t, "/api/v2/abac/policy-sets/validate", r.URL.Path)
+		assert.Equal(t, "/api/v4/abac/policy-sets/validate", r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(ValidationResult{Valid: true, Errors: []ValidationError{}})
 	}))
@@ -171,7 +171,7 @@ func TestClient_ValidatePolicySet_Invalid(t *testing.T) {
 
 func TestClient_ListAPIKeys(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/api/v2/abac/api-keys", r.URL.Path)
+		assert.Equal(t, "/api/v4/abac/api-keys", r.URL.Path)
 		assert.Equal(t, http.MethodGet, r.Method)
 		assert.Equal(t, "test-project-uuid", r.Header.Get("X-Zep-Project"))
 		w.Header().Set("Content-Type", "application/json")
@@ -195,7 +195,7 @@ func TestClient_ListAPIKeys(t *testing.T) {
 
 func TestClient_GetAPIKeySettings(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/api/v2/abac/api-keys/key-1/settings", r.URL.Path)
+		assert.Equal(t, "/api/v4/abac/api-keys/key-1/settings", r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(APIKeySettings{ABACMode: "off", Capabilities: "read_write"})
 	}))
@@ -228,7 +228,7 @@ func TestClient_SetAPIKeySettings(t *testing.T) {
 
 func TestClient_ListAPIKeyPolicySets(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/api/v2/abac/api-keys/key-1/policy-sets", r.URL.Path)
+		assert.Equal(t, "/api/v4/abac/api-keys/key-1/policy-sets", r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(AttachedPolicySets{
 			PolicySets: []PolicySetSummary{{UUID: "ps-1", Name: "test", Mode: "enforce", Version: 1}},
@@ -245,7 +245,7 @@ func TestClient_AttachPolicySet(t *testing.T) {
 	var gotBody map[string]string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
-		assert.Equal(t, "/api/v2/abac/api-keys/key-1/policy-sets", r.URL.Path)
+		assert.Equal(t, "/api/v4/abac/api-keys/key-1/policy-sets", r.URL.Path)
 		body, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(body, &gotBody)
 		w.Header().Set("Content-Type", "application/json")
@@ -264,7 +264,7 @@ func TestClient_AttachPolicySet(t *testing.T) {
 func TestClient_DetachPolicySet(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodDelete, r.Method)
-		assert.Equal(t, "/api/v2/abac/api-keys/key-1/policy-sets/ps-1", r.URL.Path)
+		assert.Equal(t, "/api/v4/abac/api-keys/key-1/policy-sets/ps-1", r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(AttachedPolicySets{PolicySets: []PolicySetSummary{}})
 	}))
@@ -281,7 +281,7 @@ func TestClient_EvaluatePolicy(t *testing.T) {
 	var gotBody map[string]string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
-		assert.Equal(t, "/api/v2/abac/policies/evaluate", r.URL.Path)
+		assert.Equal(t, "/api/v4/abac/policies/evaluate", r.URL.Path)
 		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
 		assert.Equal(t, "test-project-uuid", r.Header.Get("X-Zep-Project"))
 		body, _ := io.ReadAll(r.Body)
@@ -340,7 +340,7 @@ func TestClient_EvaluatePolicy_TypedPrincipalAndResource(t *testing.T) {
 			"role_allows": false, "would_log_disagreement": false,
 			"base": "default_deny", "base_allows": false,
 			"principal": {"type": "user", "uuid": "user-1"},
-			"resource": {"type": "graph", "uuid": "graph-1"}
+			"resource": {"type": "graph", "canonical_graph_uuid": "graph-1"}
 		}`))
 	}))
 	defer srv.Close()
@@ -349,16 +349,16 @@ func TestClient_EvaluatePolicy_TypedPrincipalAndResource(t *testing.T) {
 		context.Background(),
 		Principal{Type: PrincipalUser, UUID: "user-1"},
 		"graph.search",
-		&Resource{Type: ResourceGraph, UUID: "graph-1"},
+		&Resource{Type: ResourceGraph, CanonicalGraphUUID: "graph-1"},
 	)
 	require.NoError(t, err)
 	assert.NotContains(t, gotBody, "api_key_uuid")
 	assert.Equal(t, map[string]any{"type": "user", "uuid": "user-1"}, gotBody["principal"])
-	assert.Equal(t, map[string]any{"type": "graph", "uuid": "graph-1"}, gotBody["resource"])
+	assert.Equal(t, map[string]any{"type": "graph", "canonical_graph_uuid": "graph-1"}, gotBody["resource"])
 	require.NotNil(t, result.Principal)
 	assert.Equal(t, PrincipalUser, result.Principal.Type)
 	require.NotNil(t, result.Resource)
-	assert.Equal(t, "graph-1", result.Resource.UUID)
+	assert.Equal(t, "graph-1", result.Resource.CanonicalGraphUUID)
 	assert.Equal(t, "default_deny", result.Base)
 	require.NotNil(t, result.BaseAllows)
 	assert.False(t, *result.BaseAllows)
@@ -403,7 +403,7 @@ func TestClient_EvaluatePolicy_PreservesUnknownFields(t *testing.T) {
 func TestClient_ExplainPolicy(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
-		assert.Equal(t, "/api/v2/abac/policies/explain", r.URL.Path)
+		assert.Equal(t, "/api/v4/abac/policies/explain", r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
 			"outcome": "allow",
@@ -448,7 +448,7 @@ func TestClient_ExplainPolicy(t *testing.T) {
 func TestClient_ExplainPolicy_ResourceAware(t *testing.T) {
 	var gotBody map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/api/v2/abac/policies/explain", r.URL.Path)
+		assert.Equal(t, "/api/v4/abac/policies/explain", r.URL.Path)
 		body, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(body, &gotBody)
 		w.Header().Set("Content-Type", "application/json")
@@ -461,7 +461,7 @@ func TestClient_ExplainPolicy_ResourceAware(t *testing.T) {
 			"base": "default_deny",
 			"base_allows": false,
 			"principal": {"type": "user", "uuid": "user-1"},
-			"resource": {"type": "graph", "uuid": "graph-1"},
+			"resource": {"type": "graph", "canonical_graph_uuid": "graph-1"},
 			"trace": {
 				"action": "graph.search",
 				"registry_entry": {"read_only": true},
@@ -489,10 +489,10 @@ func TestClient_ExplainPolicy_ResourceAware(t *testing.T) {
 		context.Background(),
 		Principal{Type: PrincipalUser, UUID: "user-1"},
 		"graph.search",
-		&Resource{Type: ResourceGraph, UUID: "graph-1"},
+		&Resource{Type: ResourceGraph, CanonicalGraphUUID: "graph-1"},
 	)
 	require.NoError(t, err)
-	assert.Equal(t, map[string]any{"type": "graph", "uuid": "graph-1"}, gotBody["resource"])
+	assert.Equal(t, map[string]any{"type": "graph", "canonical_graph_uuid": "graph-1"}, gotBody["resource"])
 	assert.Equal(t, "default_deny", result.Base)
 	assert.Equal(t, []string{"group-all", "group-support"}, result.Trace.ResolvedGroupUUIDs)
 	require.Len(t, result.Trace.EvaluatedSets, 1)
@@ -510,303 +510,89 @@ func TestClient_ExplainPolicy_ResourceAware(t *testing.T) {
 
 // --- User Groups ---
 
-func TestClient_ListUserGroups(t *testing.T) {
-	var gotReq *http.Request
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotReq = r
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(UserGroupList{
-			UserGroups: []UserGroup{
-				{UUID: "group-all", Name: "All Users", Kind: "virtual", MemberCount: 12},
-				{UUID: "group-1", Name: "Support", Kind: "managed", MemberCount: 3, Version: intPtr(2)},
-			},
-			TotalCount: 2,
-			RowCount:   2,
-			Quota:      UserGroupQuota{ActiveManaged: 1, Allocation: 10, HasFeature: true, Resolved: true},
-		})
-	}))
-	defer srv.Close()
-
-	result, err := newTestClient(srv).ListUserGroups(context.Background(), 2, 25, "sup")
-	require.NoError(t, err)
-	require.Len(t, result.UserGroups, 2)
-	assert.Equal(t, "virtual", result.UserGroups[0].Kind)
-	assert.Nil(t, result.UserGroups[0].Version)
-	assert.Equal(t, 2, *result.UserGroups[1].Version)
-	assert.Equal(t, 10, result.Quota.Allocation)
-	assert.Equal(t, http.MethodGet, gotReq.Method)
-	assert.Equal(t, "/api/v2/user-groups", gotReq.URL.Path)
-	assert.Equal(t, "2", gotReq.URL.Query().Get("pageNumber"))
-	assert.Equal(t, "25", gotReq.URL.Query().Get("pageSize"))
-	assert.Equal(t, "sup", gotReq.URL.Query().Get("search"))
-	assert.Equal(t, "test-project-uuid", gotReq.Header.Get("X-Zep-Project"))
-}
-
-// The API requires pageSize, so it is always sent; search is omitted
-// when empty.
-func TestClient_ListUserGroups_OmitsEmptySearch(t *testing.T) {
-	var gotQuery string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotQuery = r.URL.RawQuery
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(UserGroupList{})
-	}))
-	defer srv.Close()
-
-	_, err := newTestClient(srv).ListUserGroups(context.Background(), 1, 50, "")
-	require.NoError(t, err)
-	assert.Equal(t, "pageNumber=1&pageSize=50", gotQuery)
-}
-
-func TestClient_GetUserGroup(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/api/v2/user-groups/group-1", r.URL.Path)
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(UserGroup{
-			UUID: "group-1", Name: "Support", Kind: "managed",
-			MemberCount: 3, AttachedPolicyCount: 1, Version: intPtr(2),
-		})
-	}))
-	defer srv.Close()
-
-	result, err := newTestClient(srv).GetUserGroup(context.Background(), "group-1")
-	require.NoError(t, err)
-	assert.Equal(t, "Support", result.Name)
-	assert.Equal(t, 1, result.AttachedPolicyCount)
-}
-
-func TestClient_CreateUserGroup(t *testing.T) {
-	var gotBody map[string]string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, http.MethodPost, r.Method)
-		assert.Equal(t, "/api/v2/user-groups", r.URL.Path)
-		body, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(body, &gotBody)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(UserGroup{UUID: "group-new", Name: "Support", Version: intPtr(1)})
-	}))
-	defer srv.Close()
-
-	result, err := newTestClient(srv).CreateUserGroup(context.Background(), "Support", "Support staff")
-	require.NoError(t, err)
-	assert.Equal(t, "group-new", result.UUID)
-	assert.Equal(t, "Support", gotBody["name"])
-	assert.Equal(t, "Support staff", gotBody["description"])
-}
-
-func TestClient_CreateUserGroup_OmitsEmptyDescription(t *testing.T) {
-	var gotBody map[string]string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(body, &gotBody)
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(UserGroup{UUID: "group-new", Name: "Support"})
-	}))
-	defer srv.Close()
-
-	_, err := newTestClient(srv).CreateUserGroup(context.Background(), "Support", "")
-	require.NoError(t, err)
-	assert.NotContains(t, gotBody, "description")
-}
-
-func TestClient_UpdateUserGroup(t *testing.T) {
-	var gotBody map[string]any
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, http.MethodPatch, r.Method)
-		assert.Equal(t, "/api/v2/user-groups/group-1", r.URL.Path)
-		body, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(body, &gotBody)
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(UserGroup{UUID: "group-1", Name: "Renamed", Version: intPtr(3)})
-	}))
-	defer srv.Close()
-
-	name := "Renamed"
-	result, err := newTestClient(srv).UpdateUserGroup(context.Background(), "group-1", &name, nil, 2)
-	require.NoError(t, err)
-	assert.Equal(t, 3, *result.Version)
-	assert.Equal(t, "Renamed", gotBody["name"])
-	assert.NotContains(t, gotBody, "description")
-	assert.Equal(t, float64(2), gotBody["expected_version"])
-}
-
-func TestClient_DeleteUserGroup(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, http.MethodDelete, r.Method)
-		assert.Equal(t, "/api/v2/user-groups/group-1", r.URL.Path)
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	defer srv.Close()
-
-	require.NoError(t, newTestClient(srv).DeleteUserGroup(context.Background(), "group-1"))
-}
-
-func TestClient_ListUserGroupMembers(t *testing.T) {
-	var gotReq *http.Request
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotReq = r
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(GroupMembers{
-			Users: []GroupMember{
-				{UUID: "user-1", UserID: "alice", Email: "alice@example.com", FirstName: "Alice"},
-			},
-			TotalCount: 1, RowCount: 1,
-		})
-	}))
-	defer srv.Close()
-
-	result, err := newTestClient(srv).ListUserGroupMembers(context.Background(), "group-1", 1, 50, "alice")
-	require.NoError(t, err)
-	require.Len(t, result.Users, 1)
-	assert.Equal(t, "alice", result.Users[0].UserID)
-	assert.Equal(t, "/api/v2/user-groups/group-1/members", gotReq.URL.Path)
-	assert.Equal(t, "alice", gotReq.URL.Query().Get("search"))
-}
-
-func TestClient_ListUserGroupMemberCandidates(t *testing.T) {
-	var gotPath string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(GroupMembers{})
-	}))
-	defer srv.Close()
-
-	_, err := newTestClient(srv).ListUserGroupMemberCandidates(context.Background(), "group-1", 1, 50, "")
-	require.NoError(t, err)
-	assert.Equal(t, "/api/v2/user-groups/group-1/members/candidates", gotPath)
-}
-
-// Candidates on the virtual All Users group is a conflict, like every
-// membership mutation on it.
-func TestClient_ListUserGroupMemberCandidates_VirtualConflict(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusConflict)
-		_ = json.NewEncoder(w).Encode(map[string]string{"message": "the All Users group is immutable"})
-	}))
-	defer srv.Close()
-
-	_, err := newTestClient(srv).ListUserGroupMemberCandidates(context.Background(), "group-all", 1, 50, "")
-	require.Error(t, err)
-	assert.True(t, IsConflict(err))
-}
-
-func TestClient_AddUserGroupMembers(t *testing.T) {
-	var gotBody map[string][]string
-	var gotPath string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, http.MethodPost, r.Method)
-		gotPath = r.URL.Path
-		body, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(body, &gotBody)
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(MembershipResult{Added: 2, NoOp: 1})
-	}))
-	defer srv.Close()
-
-	result, err := newTestClient(srv).AddUserGroupMembers(
-		context.Background(), "group-1", []string{"user-1", "user-2", "user-3"},
-	)
-	require.NoError(t, err)
-	assert.Equal(t, 2, result.Added)
-	assert.Equal(t, 1, result.NoOp)
-	assert.Equal(t, "/api/v2/user-groups/group-1/members", gotPath)
-	assert.Equal(t, []string{"user-1", "user-2", "user-3"}, gotBody["user_uuids"])
-}
-
-// Removal always uses the bulk endpoint, including for a single user.
-func TestClient_RemoveUserGroupMembers(t *testing.T) {
-	var gotBody map[string][]string
-	var gotPath string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, http.MethodPost, r.Method)
-		gotPath = r.URL.Path
-		body, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(body, &gotBody)
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(MembershipResult{Removed: 1})
-	}))
-	defer srv.Close()
-
-	result, err := newTestClient(srv).RemoveUserGroupMembers(context.Background(), "group-1", []string{"user-1"})
-	require.NoError(t, err)
-	assert.Equal(t, 1, result.Removed)
-	assert.Equal(t, "/api/v2/user-groups/group-1/members/bulk-remove", gotPath)
-	assert.Equal(t, []string{"user-1"}, gotBody["user_uuids"])
-}
-
-func TestClient_ListUserGroupsForUser(t *testing.T) {
-	var gotPath string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(UserGroupsForUser{
-			UserGroups: []UserGroup{
-				{UUID: "group-all", Name: "All Users", Kind: "virtual"},
-				{UUID: "group-1", Name: "Support", Kind: "managed", Version: intPtr(1)},
-			},
-		})
-	}))
-	defer srv.Close()
-
-	result, err := newTestClient(srv).ListUserGroupsForUser(context.Background(), "user-1")
-	require.NoError(t, err)
-	assert.Len(t, result.UserGroups, 2)
-	assert.Equal(t, "/api/v2/user-groups/users/user-1", gotPath)
-}
-
-// --- User Group Policy Attachments ---
-
 func TestClient_ListUserGroupPolicySets(t *testing.T) {
+	var requestCount int
+	var cursors []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method)
-		assert.Equal(t, "/api/v2/abac/user-groups/group-1/policy-sets", r.URL.Path)
+		assert.Equal(t, "/api/v4/user-groups/group-1/policy-sets", r.URL.Path)
+		assert.Equal(t, "200", r.URL.Query().Get("page_size"))
+		requestCount++
+		cursors = append(cursors, r.URL.Query().Get("cursor"))
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(AttachedPolicySets{
-			PolicySets: []PolicySetSummary{{UUID: "ps-1", Name: "support_read", Mode: "enforce", Version: 1}},
-		})
+		if requestCount == 1 {
+			_, _ = w.Write([]byte(`{"items":[{"uuid":"ps-1","name":"support_read","mode":"enforce","version":1}],"next_cursor":"c1"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"items":[{"uuid":"ps-2","name":"support_write","mode":"report_only","version":2}]}`))
 	}))
 	defer srv.Close()
 
 	result, err := newTestClient(srv).ListUserGroupPolicySets(context.Background(), "group-1")
 	require.NoError(t, err)
-	require.Len(t, result.PolicySets, 1)
+	require.Len(t, result.PolicySets, 2)
 	assert.Equal(t, "support_read", result.PolicySets[0].Name)
+	assert.Equal(t, "support_write", result.PolicySets[1].Name)
+	assert.Equal(t, []string{"", "c1"}, cursors)
+	assert.Equal(t, 2, requestCount)
+}
+
+func TestClient_ListUserGroupPolicySets_Empty(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "200", r.URL.Query().Get("page_size"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"items":[]}`))
+	}))
+	defer srv.Close()
+
+	result, err := newTestClient(srv).ListUserGroupPolicySets(context.Background(), "group-1")
+	require.NoError(t, err)
+	require.NotNil(t, result.PolicySets)
+	assert.Empty(t, result.PolicySets)
 }
 
 func TestClient_AttachUserGroupPolicySet(t *testing.T) {
 	var gotBody map[string]string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
-		assert.Equal(t, "/api/v2/abac/user-groups/group-1/policy-sets", r.URL.Path)
+		assert.Equal(t, "/api/v4/user-groups/group-1/policy-sets", r.URL.Path)
 		body, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(body, &gotBody)
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(AttachedPolicySets{
-			PolicySets: []PolicySetSummary{{UUID: "ps-1", Name: "support_read", Mode: "enforce", Version: 1}},
-		})
+		_, _ = w.Write([]byte(`{"items":[{"uuid":"ps-1","name":"support_read","mode":"enforce","version":1}]}`))
 	}))
 	defer srv.Close()
 
 	result, err := newTestClient(srv).AttachUserGroupPolicySet(context.Background(), "group-1", "ps-1")
 	require.NoError(t, err)
-	assert.Len(t, result.PolicySets, 1)
+	require.Len(t, result.PolicySets, 1)
+	assert.Equal(t, "support_read", result.PolicySets[0].Name)
 	assert.Equal(t, "ps-1", gotBody["policy_set_uuid"])
 }
 
 func TestClient_DetachUserGroupPolicySet(t *testing.T) {
+	var requestCount int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, http.MethodDelete, r.Method)
-		assert.Equal(t, "/api/v2/abac/user-groups/group-1/policy-sets/ps-1", r.URL.Path)
+		requestCount++
+		if requestCount == 1 {
+			assert.Equal(t, http.MethodDelete, r.Method)
+			assert.Equal(t, "/api/v4/user-groups/group-1/policy-sets/ps-1", r.URL.Path)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/api/v4/user-groups/group-1/policy-sets", r.URL.Path)
+		assert.Equal(t, "200", r.URL.Query().Get("page_size"))
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(AttachedPolicySets{PolicySets: []PolicySetSummary{}})
+		_, _ = w.Write([]byte(`{"items":[{"uuid":"ps-2","name":"support_read","mode":"report_only","version":2}]}`))
 	}))
 	defer srv.Close()
 
 	result, err := newTestClient(srv).DetachUserGroupPolicySet(context.Background(), "group-1", "ps-1")
 	require.NoError(t, err)
-	assert.Empty(t, result.PolicySets)
+	require.Len(t, result.PolicySets, 1)
+	assert.Equal(t, "ps-2", result.PolicySets[0].UUID)
+	assert.Equal(t, 2, requestCount)
 }
 
 // A retention policy set cannot attach to a user group.
@@ -824,20 +610,6 @@ func TestClient_AttachUserGroupPolicySet_BadRequest(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
 	assert.Contains(t, apiErr.Message, "retention policy sets")
 }
-
-func TestClient_GetUserGroup_NotFound(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-		_ = json.NewEncoder(w).Encode(map[string]string{"message": "user group not found"})
-	}))
-	defer srv.Close()
-
-	_, err := newTestClient(srv).GetUserGroup(context.Background(), "missing")
-	require.Error(t, err)
-	assert.True(t, IsNotFound(err))
-}
-
-func intPtr(value int) *int { return &value }
 
 // --- Error Handling ---
 
@@ -892,6 +664,48 @@ func TestClient_ErrorWithoutBody(t *testing.T) {
 	require.ErrorAs(t, err, &apiErr)
 	assert.Equal(t, http.StatusInternalServerError, apiErr.StatusCode)
 	assert.Contains(t, apiErr.Message, "HTTP 500")
+}
+
+func TestDecodeError(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		body       string
+		wantCode   string
+		wantMsg    string
+	}{
+		{
+			name:       "v4 error envelope",
+			statusCode: http.StatusNotFound,
+			body:       `{"error":{"code":"not_found","message":"graph not found","request_id":"request-1"}}`,
+			wantCode:   "not_found",
+			wantMsg:    "graph not found",
+		},
+		{
+			name:       "top-level error",
+			statusCode: http.StatusBadRequest,
+			body:       `{"code":"bad_request","message":"invalid resource"}`,
+			wantCode:   "bad_request",
+			wantMsg:    "invalid resource",
+		},
+		{
+			name:       "non-JSON body",
+			statusCode: http.StatusInternalServerError,
+			body:       "upstream error",
+			wantMsg:    "API error (HTTP 500)",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := decodeError(test.statusCode, []byte(test.body))
+			var apiErr *APIError
+			require.ErrorAs(t, err, &apiErr)
+			assert.Equal(t, test.statusCode, apiErr.StatusCode)
+			assert.Equal(t, test.wantCode, apiErr.Code)
+			assert.Equal(t, test.wantMsg, apiErr.Message)
+		})
+	}
 }
 
 func TestIsNotFound_NonAPIError(t *testing.T) {

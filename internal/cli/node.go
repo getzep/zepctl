@@ -4,10 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
-	"github.com/getzep/zep-go/v3"
-	zepgraph "github.com/getzep/zep-go/v3/graph"
+	"github.com/getzep/zep-go/v4"
+	zepgraph "github.com/getzep/zep-go/v4/graph"
 	"github.com/getzep/zepctl/internal/client"
 	"github.com/getzep/zepctl/internal/output"
 	"github.com/spf13/cobra"
@@ -35,67 +34,66 @@ var nodeListCmd = &cobra.Command{
 			return err
 		}
 
-		var nodes []*zep.EntityNode
-
 		limit, _ := cmd.Flags().GetInt("limit")
 		cursor, _ := cmd.Flags().GetString("cursor")
 
-		req := &zep.GraphNodesRequest{}
+		req := &zepgraph.NodeListRequest{}
 		if limit > 0 {
-			req.Limit = zep.Int(limit)
+			req.PageSize = zep.Int(limit)
 		}
 		if cursor != "" {
-			req.UUIDCursor = zep.String(cursor)
+			req.Cursor = zep.String(cursor)
 		}
 
+		graphUUID := graphID
 		if userID != "" {
-			result, err := c.Graph.Node.GetByUserID(context.Background(), userID, req)
-			if err != nil {
-				return fmt.Errorf("listing nodes: %w", err)
-			}
-			nodes = result
-		} else {
-			result, err := c.Graph.Node.GetByGraphID(context.Background(), graphID, req)
-			if err != nil {
-				return fmt.Errorf("listing nodes: %w", err)
-			}
-			nodes = result
+			graphUUID = userID
+		}
+		nodes, err := c.Graph.Node.List(context.Background(), graphUUID, req)
+		if err != nil {
+			return fmt.Errorf("listing nodes: %w", err)
 		}
 
 		if output.GetFormat() == output.FormatTable {
 			tbl := output.NewTable("UUID", "NAME", "LABEL", "SUMMARY")
 			tbl.WriteHeader()
-			for _, n := range nodes {
+			for _, n := range nodes.Results {
 				label := ""
 				if len(n.Labels) > 0 {
 					label = n.Labels[0]
 				}
-				summary := n.Summary
-				if len(summary) > 40 {
-					summary = summary[:40] + "..."
+				summary := ""
+				if n.Summary != nil {
+					summary = *n.Summary
 				}
-				tbl.WriteRow(n.UUID, n.Name, label, summary)
+				summary = truncateText(summary, 40)
+				tbl.WriteRow(valueOrEmpty(n.UUID), valueOrEmpty(n.Name), label, summary)
 			}
+			writeNextCursor(nodes.RawResponse.Next)
 			return tbl.Flush()
 		}
 
-		return output.Print(nodes)
+		return output.Print(map[string]any{itemsOutputKey: nodes.Results, nextCursorOutputKey: nodes.RawResponse.Next})
 	},
 }
 
 var nodeGetCmd = &cobra.Command{
-	Use:   "get <uuid>",
+	Use:   "get <node-uuid>",
 	Short: "Get node details",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		uuid := args[0]
+		graphUUID, err := graphUUIDFromFlags(cmd)
+		if err != nil {
+			return err
+		}
 
 		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
 
-		node, err := c.Graph.Node.Get(context.Background(), uuid)
+		node, err := c.Graph.Node.Get(context.Background(), graphUUID, uuid)
 		if err != nil {
 			return fmt.Errorf("getting node: %w", err)
 		}
@@ -103,13 +101,13 @@ var nodeGetCmd = &cobra.Command{
 		if output.GetFormat() == output.FormatTable {
 			tbl := output.NewTable("FIELD", "VALUE")
 			tbl.WriteHeader()
-			tbl.WriteRow("UUID", node.UUID)
-			tbl.WriteRow("Name", node.Name)
+			tbl.WriteRow("UUID", valueOrEmpty(node.UUID))
+			tbl.WriteRow("Name", valueOrEmpty(node.Name))
 			if len(node.Labels) > 0 {
 				tbl.WriteRow("Labels", fmt.Sprintf("%v", node.Labels))
 			}
-			tbl.WriteRow("Summary", node.Summary)
-			tbl.WriteRow("Created At", node.CreatedAt)
+			tbl.WriteRow("Summary", valueOrEmpty(node.Summary))
+			tbl.WriteRow("Created At", valueOrEmpty(node.CreatedAt))
 			return tbl.Flush()
 		}
 
@@ -118,19 +116,32 @@ var nodeGetCmd = &cobra.Command{
 }
 
 var nodeEdgesCmd = &cobra.Command{
-	Use:   "edges <uuid>",
+	Use:   "edges <node-uuid>",
 	Short: "Get edges for a node",
 	Long:  `Returns all entity edges connected to the specified node.`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		uuid := args[0]
+		graphUUID, err := graphUUIDFromFlags(cmd)
+		if err != nil {
+			return err
+		}
 
 		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
 
-		edges, err := c.Graph.Node.GetEdges(context.Background(), uuid)
+		limit, _ := cmd.Flags().GetInt("limit")
+		cursor, _ := cmd.Flags().GetString("cursor")
+		request := &zepgraph.EdgeListRequest{Filters: &zep.EdgeListFilters{ConnectedNodeUUIDs: []string{uuid}}}
+		if limit > 0 {
+			request.PageSize = zep.Int(limit)
+		}
+		if cursor != "" {
+			request.Cursor = zep.String(cursor)
+		}
+		edges, err := c.Graph.Edge.List(context.Background(), graphUUID, request)
 		if err != nil {
 			return fmt.Errorf("getting node edges: %w", err)
 		}
@@ -138,34 +149,46 @@ var nodeEdgesCmd = &cobra.Command{
 		if output.GetFormat() == output.FormatTable {
 			tbl := output.NewTable("UUID", "NAME", "FACT", "SOURCE", "TARGET")
 			tbl.WriteHeader()
-			for _, e := range edges {
-				fact := e.Fact
-				if len(fact) > 40 {
-					fact = fact[:40] + "..."
-				}
-				tbl.WriteRow(e.UUID, e.Name, fact, e.SourceNodeUUID, e.TargetNodeUUID)
+			for _, e := range edges.Results {
+				fact := valueOrEmpty(e.Fact)
+				fact = truncateText(fact, 40)
+				tbl.WriteRow(valueOrEmpty(e.UUID), valueOrEmpty(e.Name), fact, valueOrEmpty(e.SourceNodeUUID), valueOrEmpty(e.TargetNodeUUID))
 			}
+			writeNextCursor(edges.RawResponse.Next)
 			return tbl.Flush()
 		}
 
-		return output.Print(edges)
+		return output.Print(map[string]any{itemsOutputKey: edges.Results, nextCursorOutputKey: edges.RawResponse.Next})
 	},
 }
 
 var nodeEpisodesCmd = &cobra.Command{
-	Use:   "episodes <uuid>",
+	Use:   "episodes <node-uuid>",
 	Short: "Get episodes that mention a node",
 	Long:  `Returns all episodes that mention the specified node.`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		uuid := args[0]
+		graphUUID, err := graphUUIDFromFlags(cmd)
+		if err != nil {
+			return err
+		}
 
 		c, err := client.NewForCommand(cmd)
 		if err != nil {
 			return err
 		}
 
-		episodes, err := c.Graph.Node.GetEpisodes(context.Background(), uuid)
+		limit, _ := cmd.Flags().GetInt("limit")
+		cursor, _ := cmd.Flags().GetString("cursor")
+		request := &zepgraph.EpisodeListRequest{Filters: &zep.EpisodeListFilters{MentionedNodeUUIDs: []string{uuid}}}
+		if limit > 0 {
+			request.PageSize = zep.Int(limit)
+		}
+		if cursor != "" {
+			request.Cursor = zep.String(cursor)
+		}
+		episodes, err := c.Graph.Episode.List(context.Background(), graphUUID, request)
 		if err != nil {
 			return fmt.Errorf("getting node episodes: %w", err)
 		}
@@ -173,33 +196,35 @@ var nodeEpisodesCmd = &cobra.Command{
 		if output.GetFormat() == output.FormatTable {
 			tbl := output.NewTable("UUID", "SOURCE", "CONTENT", "CREATED AT")
 			tbl.WriteHeader()
-			for _, ep := range episodes.Episodes {
+			for _, ep := range episodes.Results {
 				source := ""
 				if ep.Source != nil {
 					source = string(*ep.Source)
 				}
-				content := ep.Content
-				if len(content) > 40 {
-					content = content[:40] + "..."
-				}
-				tbl.WriteRow(ep.UUID, source, content, ep.CreatedAt)
+				content := valueOrEmpty(ep.Content)
+				content = truncateText(content, 40)
+				tbl.WriteRow(valueOrEmpty(ep.UUID), source, content, valueOrEmpty(ep.CreatedAt))
 			}
+			writeNextCursor(episodes.RawResponse.Next)
 			return tbl.Flush()
 		}
 
-		return output.Print(episodes)
+		return output.Print(map[string]any{itemsOutputKey: episodes.Results, nextCursorOutputKey: episodes.RawResponse.Next})
 	},
 }
 
 var nodeUpdateCmd = &cobra.Command{
-	Use:   "update <uuid>",
+	Use:   "update <node-uuid>",
 	Short: "Update a node",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		uuid := args[0]
+		graphUUID, err := graphUUIDFromFlags(cmd)
+		if err != nil {
+			return err
+		}
 		name, _ := cmd.Flags().GetString("name")
 		summary, _ := cmd.Flags().GetString("summary")
-		labelsStr, _ := cmd.Flags().GetString("labels")
 		attrsStr, _ := cmd.Flags().GetString("attrs")
 
 		c, err := client.NewForCommand(cmd)
@@ -207,16 +232,13 @@ var nodeUpdateCmd = &cobra.Command{
 			return err
 		}
 
-		req := &zepgraph.UpdateNodeRequest{}
+		req := &zepgraph.PatchNodeRequest{}
 
 		if name != "" {
 			req.Name = zep.String(name)
 		}
 		if summary != "" {
 			req.Summary = zep.String(summary)
-		}
-		if labelsStr != "" {
-			req.Labels = strings.Split(labelsStr, ",")
 		}
 		if attrsStr != "" {
 			var attrs map[string]any
@@ -226,7 +248,7 @@ var nodeUpdateCmd = &cobra.Command{
 			req.Attributes = attrs
 		}
 
-		node, err := c.Graph.Node.Update(context.Background(), uuid, req)
+		node, err := c.Graph.Node.Update(context.Background(), graphUUID, uuid, req)
 		if err != nil {
 			return fmt.Errorf("updating node: %w", err)
 		}
@@ -237,11 +259,15 @@ var nodeUpdateCmd = &cobra.Command{
 }
 
 var nodeDeleteCmd = &cobra.Command{
-	Use:   "delete <uuid>",
+	Use:   "delete <node-uuid>",
 	Short: "Delete a node",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		uuid := args[0]
+		graphUUID, err := graphUUIDFromFlags(cmd)
+		if err != nil {
+			return err
+		}
 		force, _ := cmd.Flags().GetBool("force")
 
 		if !force {
@@ -257,12 +283,14 @@ var nodeDeleteCmd = &cobra.Command{
 			return err
 		}
 
-		if _, err := c.Graph.Node.Delete(context.Background(), uuid); err != nil {
+		result, err := c.Graph.Node.Delete(context.Background(), graphUUID, uuid)
+		if err != nil {
 			return fmt.Errorf("deleting node: %w", err)
 		}
 
-		output.Info("Deleted node %q", uuid)
-		return nil
+		wait, _ := cmd.Flags().GetBool("wait")
+		timeout, _ := cmd.Flags().GetDuration("timeout")
+		return reportDeletion(c, "node", uuid, result.Task, wait, timeout)
 	},
 }
 
@@ -276,17 +304,26 @@ func init() {
 	nodeCmd.AddCommand(nodeDeleteCmd)
 
 	// List flags
-	nodeListCmd.Flags().String("user", "", "List nodes for user graph")
-	nodeListCmd.Flags().String("graph", "", "List nodes for standalone graph")
+	nodeListCmd.Flags().String("user", "", "User UUID for a user graph")
+	nodeListCmd.Flags().String("graph", "", "Graph UUID for a standalone graph")
 	nodeListCmd.Flags().Int("limit", 50, "Maximum number of results to return")
 	nodeListCmd.Flags().String("cursor", "", "UUID cursor for pagination (last UUID from previous page)")
+	for _, command := range []*cobra.Command{nodeEdgesCmd, nodeEpisodesCmd} {
+		command.Flags().Int("limit", 50, "Maximum number of results")
+		command.Flags().String("cursor", "", "Cursor from the previous page")
+	}
+	for _, command := range []*cobra.Command{nodeGetCmd, nodeEdgesCmd, nodeEpisodesCmd, nodeUpdateCmd, nodeDeleteCmd} {
+		command.Flags().String("user", "", "User UUID for a user graph")
+		command.Flags().String("graph", "", "Graph UUID for a standalone graph")
+	}
 
 	// Update flags
 	nodeUpdateCmd.Flags().String("name", "", "Updated name")
 	nodeUpdateCmd.Flags().String("summary", "", "Updated summary")
-	nodeUpdateCmd.Flags().String("labels", "", "Comma-separated labels")
 	nodeUpdateCmd.Flags().String("attrs", "", "Attributes as JSON (merged with existing, set key to null to delete)")
 
 	// Delete flags
 	nodeDeleteCmd.Flags().Bool("force", false, "Skip confirmation prompt")
+	nodeDeleteCmd.Flags().Bool("wait", false, "Wait for asynchronous deletion")
+	nodeDeleteCmd.Flags().Duration("timeout", defaultTaskTimeout, "Maximum time to wait")
 }
