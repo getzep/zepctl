@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -152,27 +153,48 @@ func setupAutoSelectTest(t *testing.T, accountUUID string, projectsFn func() ([]
 	return cfg, profile
 }
 
-// runAuthStatus sets up a config with a "test" profile, seeds the keychain
-// with creds, runs authStatusCmd, and returns the captured stdout.
-func runAuthStatus(t *testing.T, creds *keyring.Credentials) string {
+func prepareAuthStatus(t *testing.T, configYAML string) {
 	t.Helper()
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
 	viper.Reset()
 	t.Cleanup(func() { viper.Reset() })
 
-	writeTestConfig(t, tmpDir)
-	_, _ = config.Reload()
-
-	if err := keyring.SetCredentials("test", creds); err != nil {
-		t.Fatalf("SetCredentials: %v", err)
+	configDir := filepath.Join(tmpDir, ".zepctl")
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(configYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := config.Reload(); err != nil {
+		t.Fatalf("loading test config: %v", err)
+	}
+	viper.SetEnvPrefix("ZEP")
+	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+	viper.AutomaticEnv()
+}
 
+func executeAuthStatus(t *testing.T) (string, error) {
+	t.Helper()
 	cmd := &cobra.Command{Use: "test"}
 	var runErr error
 	got := captureStdout(t, func() {
 		runErr = authStatusCmd.RunE(cmd, nil)
 	})
+	return got, runErr
+}
+
+// runAuthStatus sets up a config with a "test" profile, seeds the keychain
+// with creds, runs authStatusCmd, and returns the captured stdout.
+func runAuthStatus(t *testing.T, creds *keyring.Credentials) string {
+	t.Helper()
+	prepareAuthStatus(t, "current-profile: test\nprofiles:\n  - name: test\n    api-url: https://api.getzep.com\n")
+	if err := keyring.SetCredentials("test", creds); err != nil {
+		t.Fatalf("SetCredentials: %v", err)
+	}
+
+	got, runErr := executeAuthStatus(t)
 	if runErr != nil {
 		t.Fatalf("auth status: %v", runErr)
 	}
@@ -248,6 +270,43 @@ func TestAuthStatusOutput_BearerOnly(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("output missing %q:\n%s", want, got)
 		}
+	}
+}
+
+func TestAuthStatusOutput_BearerOverride(t *testing.T) {
+	t.Setenv("ZEP_BEARER_TOKEN", "external-bearer-token")
+	got := runAuthStatus(t, &keyring.Credentials{})
+
+	if !strings.Contains(got, "Bearer commands use ZEP_BEARER_TOKEN instead of the keychain token.") {
+		t.Errorf("output does not describe the bearer token override:\n%s", got)
+	}
+}
+
+func TestAuthStatusOutput_BearerOverrideWithoutProfile(t *testing.T) {
+	t.Setenv("ZEP_BEARER_TOKEN", "external-bearer-token")
+	prepareAuthStatus(t, "profiles: []\n")
+
+	got, err := executeAuthStatus(t)
+	if err != nil {
+		t.Fatalf("auth status: %v", err)
+	}
+	if !strings.Contains(got, "Bearer commands use ZEP_BEARER_TOKEN instead of the keychain token.") {
+		t.Errorf("output does not describe the bearer token override:\n%s", got)
+	}
+}
+
+func TestAuthStatusOutput_BearerOverrideWithKeychainError(t *testing.T) {
+	t.Setenv("ZEP_BEARER_TOKEN", "external-bearer-token")
+	prepareAuthStatus(t, "current-profile: test\nprofiles:\n  - name: test\n    api-url: https://api.getzep.com\n")
+	gokeyring.MockInitWithError(errors.New("keychain unavailable"))
+	t.Cleanup(gokeyring.MockInit)
+
+	got, err := executeAuthStatus(t)
+	if err != nil {
+		t.Fatalf("auth status: %v", err)
+	}
+	if !strings.Contains(got, "Bearer commands use ZEP_BEARER_TOKEN instead of the keychain token.") {
+		t.Errorf("output does not describe the bearer token override:\n%s", got)
 	}
 }
 

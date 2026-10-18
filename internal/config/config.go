@@ -265,6 +265,12 @@ func GetAPIKeyOverride() string {
 	return viper.GetString("api-key")
 }
 
+// GetBearerTokenOverride returns the bearer token set by ZEP_BEARER_TOKEN.
+// It returns an empty string when the variable is unset or contains only whitespace.
+func GetBearerTokenOverride() string {
+	return strings.TrimSpace(viper.GetString("bearer-token"))
+}
+
 // GetAPIKey returns the API key to use, checking flags, env, and profile keychain.
 func GetAPIKey() string {
 	// Flag/env takes precedence

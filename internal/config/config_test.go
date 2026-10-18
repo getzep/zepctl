@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/getzep/zepctl/internal/keyring"
@@ -243,6 +244,33 @@ func TestGetAPIKeyOverride_ReturnsOverride(t *testing.T) {
 	got = GetAPIKeyOverride()
 	if got != "" {
 		t.Errorf("GetAPIKeyOverride() = %q, want empty", got)
+	}
+}
+
+func TestGetBearerTokenOverride(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{name: "trims token", value: "  bearer-token \n", want: "bearer-token"},
+		{name: "empty is unset", value: "", want: ""},
+		{name: "whitespace is unset", value: " \t\n", want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetConfig(t)
+			defer resetConfig(t)
+			t.Setenv("ZEP_BEARER_TOKEN", tt.value)
+			viper.SetEnvPrefix("ZEP")
+			viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+			viper.AutomaticEnv()
+
+			if got := GetBearerTokenOverride(); got != tt.want {
+				t.Errorf("GetBearerTokenOverride() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
