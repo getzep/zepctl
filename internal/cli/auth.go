@@ -205,6 +205,10 @@ var authStatusCmd = &cobra.Command{
 			fmt.Println("Bearer token:  not configured")
 		}
 
+		if config.GetBearerTokenOverride() != "" {
+			fmt.Println("Bearer commands use ZEP_BEARER_TOKEN instead of the keychain token.")
+		}
+
 		return nil
 	},
 }

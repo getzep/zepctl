@@ -138,6 +138,12 @@ func normalizeSDKBaseURL(raw string) string {
 // on a token retrieval error the bearer token fields are cleared from the
 // keychain and a user-facing message is returned.
 func newBearerClient(ctx context.Context) (*http.Client, error) {
+	if token := config.GetBearerTokenOverride(); token != "" {
+		return &http.Client{
+			Transport: &BearerTransport{Token: token, Base: http.DefaultTransport},
+		}, nil
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, fmt.Errorf("loading config: %w", err)

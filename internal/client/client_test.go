@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/getzep/zep-go/v4"
 	"github.com/getzep/zepctl/internal/config"
 	"github.com/getzep/zepctl/internal/keyring"
 	"github.com/spf13/cobra"
@@ -292,6 +293,119 @@ func TestNewForCommand_APIKeyOverrideForcesAPIKey(t *testing.T) {
 	}
 	if c == nil {
 		t.Fatal("expected non-nil client")
+	}
+}
+
+func TestNewBearerHTTPClient_BearerTokenOverride(t *testing.T) {
+	tests := []struct {
+		name    string
+		token   string
+		profile bool
+		want    string
+		wantErr string
+	}{
+		{name: "without profile", token: "test-bearer-token", want: "Bearer test-bearer-token"},
+		{name: "overrides profile token", token: "env-bearer-token", profile: true, want: "Bearer env-bearer-token"},
+		{name: "empty token keeps profile path", token: "", wantErr: "no active profile"},
+		{name: "whitespace token keeps profile path", token: " \t\n", wantErr: "no active profile"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			viper.Reset()
+			t.Cleanup(func() { viper.Reset() })
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("ZEP_BEARER_TOKEN", tt.token)
+			viper.SetEnvPrefix("ZEP")
+			viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+			viper.AutomaticEnv()
+
+			if tt.profile {
+				cfg := &config.Config{
+					CurrentProfile: "test",
+					Profiles:       []config.Profile{{Name: "test"}},
+				}
+				if err := cfg.Save(); err != nil {
+					t.Fatalf("saving config: %v", err)
+				}
+				if err := keyring.SetCredentials("test", &keyring.Credentials{
+					AccessToken:  "keychain-bearer-token",
+					RefreshToken: "refresh-token",
+					ExpiresAt:    time.Now().Add(time.Hour).Format(time.RFC3339),
+				}); err != nil {
+					t.Fatalf("seeding keychain: %v", err)
+				}
+			} else {
+				if _, err := config.Reload(); err != nil {
+					t.Fatalf("loading config: %v", err)
+				}
+			}
+
+			httpClient, _, err := NewBearerHTTPClient(context.Background())
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("NewBearerHTTPClient() error = %v, want it to contain %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("NewBearerHTTPClient(): %v", err)
+			}
+
+			var gotAuth string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotAuth = r.Header.Get("Authorization")
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			defer srv.Close()
+
+			resp, err := httpClient.Get(srv.URL) //nolint:noctx // test-only
+			if err != nil {
+				t.Fatalf("request failed: %v", err)
+			}
+			defer resp.Body.Close()
+
+			if gotAuth != tt.want {
+				t.Errorf("Authorization header = %q, want %q", gotAuth, tt.want)
+			}
+		})
+	}
+}
+
+func TestNewForCommand_APIKeyOverrideWinsOverBearerToken(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("ZEP_BEARER_TOKEN", "env-bearer-token")
+	viper.SetEnvPrefix("ZEP")
+	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+	viper.AutomaticEnv()
+	t.Setenv("ZEP_API_KEY", "z_api_key_override")
+
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[]}`))
+	}))
+	defer srv.Close()
+
+	viper.Set("api-url", srv.URL)
+
+	cmd := &cobra.Command{Use: "test"}
+	cmd.SetContext(context.Background())
+	SetCredentialType(cmd, CredentialBearer)
+
+	c, err := NewForCommand(cmd)
+	if err != nil {
+		t.Fatalf("NewForCommand(): %v", err)
+	}
+	if _, err := c.User.List(context.Background(), &zep.UserListRequest{}); err != nil {
+		t.Fatalf("listing users: %v", err)
+	}
+	if gotAuth != "Api-Key z_api_key_override" {
+		t.Errorf("Authorization header = %q, want %q", gotAuth, "Api-Key z_api_key_override")
 	}
 }
 

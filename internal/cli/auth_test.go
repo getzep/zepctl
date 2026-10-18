@@ -163,6 +163,9 @@ func runAuthStatus(t *testing.T, creds *keyring.Credentials) string {
 
 	writeTestConfig(t, tmpDir)
 	_, _ = config.Reload()
+	viper.SetEnvPrefix("ZEP")
+	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+	viper.AutomaticEnv()
 
 	if err := keyring.SetCredentials("test", creds); err != nil {
 		t.Fatalf("SetCredentials: %v", err)
@@ -248,6 +251,15 @@ func TestAuthStatusOutput_BearerOnly(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("output missing %q:\n%s", want, got)
 		}
+	}
+}
+
+func TestAuthStatusOutput_BearerOverride(t *testing.T) {
+	t.Setenv("ZEP_BEARER_TOKEN", "external-bearer-token")
+	got := runAuthStatus(t, &keyring.Credentials{})
+
+	if !strings.Contains(got, "Bearer commands use ZEP_BEARER_TOKEN instead of the keychain token.") {
+		t.Errorf("output does not describe the bearer token override:\n%s", got)
 	}
 }
 
