@@ -328,7 +328,7 @@ zepctl graph clone --source-graph <graph-uuid> [--wait] [--timeout 5m]
 
 The command prints the new graph UUID. `--wait` waits for the clone task. The default timeout is five minutes.
 
-# Add data to a graph
+# Add data to a graph. The output contains the episode and the ingestion task.
 zepctl graph add <graph-uuid> --type text --data "User prefers dark mode" --wait
 zepctl graph add --user <user-uuid> --type json --file data.json
 zepctl graph add --user <user-uuid> --batch --file episodes.json --wait
@@ -392,7 +392,7 @@ The graph search flags depend on the selected scope. The command rejects flags t
 | `--reranker` | Reranker: `rrf`, `mmr`, `cross_encoder` |
 | `--mmr-lambda` | MMR diversity/relevance balance (0-1) |
 | `--max-characters` | Max total characters across selected results (`scope=auto`, max 50000) |
-| `--return-raw-results` | When `scope=auto`, include raw graph results alongside the materialized context block |
+| `--return-raw-results` | When `scope=auto`, include raw graph results alongside the materialized context block. Table format then prints the full response as JSON |
 | `--edge-types` | Comma-separated edge types to include (`scope=edges`) |
 | `--exclude-edge-types` | Comma-separated edge types to exclude (`scope=edges`) |
 | `--node-labels` | Comma-separated node labels to include (`scope=nodes`) |
@@ -685,6 +685,8 @@ zepctl user-group explain  <group-uuid> --action <name> [--graph <graph-uuid>]
 | `--search` | (`list`, `members list`, `members candidates`) Name search; user search for the member commands |
 | `--action` | (`evaluate`, `explain`) Required. Action name to evaluate (e.g. `graph.search`) |
 | `--graph` | (`evaluate`, `explain`) Standalone graph UUID to evaluate as the resource |
+
+`policy-sets detach` prints the policy sets that stay attached in JSON and YAML format. If the detach succeeds and that list request fails, the command prints a warning and exits 0.
 
 `members candidates` lists active users who are not yet members, so you can find UUIDs to pass to `members add`. Adding a user who is already a member, or removing one who is not, is a successful no-op and is reported in the count.
 

@@ -185,16 +185,9 @@ func (c *Client) AttachUserGroupPolicySet(
 
 func (c *Client) DetachUserGroupPolicySet(
 	ctx context.Context, groupUUID, policySetUUID string,
-) (*AttachedPolicySets, error) {
+) error {
 	path := userGroupPolicySetsPath(groupUUID) + "/" + url.PathEscape(policySetUUID)
-	if err := c.doRequest(ctx, http.MethodDelete, path, nil, nil); err != nil {
-		return nil, err
-	}
-	result, err := c.ListUserGroupPolicySets(ctx, groupUUID)
-	if err != nil {
-		return nil, fmt.Errorf("policy set detached; listing remaining policy sets: %w", err)
-	}
-	return result, nil
+	return c.doRequest(ctx, http.MethodDelete, path, nil, nil)
 }
 
 // --- Policy Evaluation (Dry-Run) ---
