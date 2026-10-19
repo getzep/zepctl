@@ -55,7 +55,7 @@ func validateUUID(value, label string) error {
 var policySetCmd = &cobra.Command{
 	Use:   "policy-set",
 	Short: "Manage ABAC policy sets",
-	Long:  "Create, list, update, delete, and validate ABAC policy sets.",
+	Long:  "Create, list, update, delete, and validate ABAC policy sets. Retention policy sets can also be attached to graph ID patterns.",
 }
 
 var policySetListCmd = &cobra.Command{
@@ -275,6 +275,7 @@ func init() {
 	policySetCmd.AddCommand(policySetUpdateCmd)
 	policySetCmd.AddCommand(policySetDeleteCmd)
 	policySetCmd.AddCommand(policySetValidateCmd)
+	policySetCmd.AddCommand(policySetRetentionTargetCmd)
 
 	policySetCreateCmd.Flags().String("file", "", "Path to policy set YAML file")
 	_ = policySetCreateCmd.MarkFlagRequired("file")
@@ -287,6 +288,8 @@ func init() {
 	for _, cmd := range []*cobra.Command{
 		policySetListCmd, policySetGetCmd, policySetCreateCmd,
 		policySetUpdateCmd, policySetDeleteCmd, policySetValidateCmd,
+		policySetRetentionTargetListCmd, policySetRetentionTargetAttachCmd,
+		policySetRetentionTargetDetachCmd,
 	} {
 		client.SetCredentialType(cmd, client.CredentialBearer)
 	}
