@@ -608,7 +608,7 @@ zepctl policy-set retention-target detach <policy-set-uuid> --pattern <pattern>
 `validate` exits 0 on success, 1 if validation fails (errors printed to stderr), and 2 on client or transport errors.
 </Note>
 
-The `--pattern` flag accepts an exact graph ID, a prefix that ends in `*`, or `*` for all graphs in the project. The server validates the pattern.
+The `--pattern` flag accepts an exact graph ID, a prefix that ends in `*`, or `*` for all graphs in the project. The server validates the pattern. A whole-graph retention policy set accepts all three pattern forms. An object-level retention policy set accepts only the pattern `*`.
 
 A retention policy set has no effect until you attach it to a target. The server accepts targets only for retention policy sets and rejects targets for other policy-set types.
 

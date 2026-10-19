@@ -13,7 +13,7 @@ var policySetRetentionTargetCmd = &cobra.Command{
 	Use:     "retention-target",
 	Aliases: []string{"retention-targets"},
 	Short:   "Manage the graph ID patterns of a retention policy set",
-	Long: `Manage the graph ID patterns of a retention policy set. A retention policy set has no effect until it is attached to at least one pattern. A pattern is an exact graph ID, a prefix that ends in "*", or "*" for all graphs in the project.
+	Long: `Manage the graph ID patterns of a retention policy set. A retention policy set has no effect until it is attached to at least one pattern. A pattern is an exact graph ID, a prefix that ends in "*", or "*" for all graphs in the project. An object-level retention policy set accepts only the pattern "*".
 
 Examples:
   zepctl policy-set retention-target list <policy-set-uuid>
@@ -61,7 +61,7 @@ Example:
 var policySetRetentionTargetAttachCmd = &cobra.Command{
 	Use:   "attach <policy-set-uuid>",
 	Short: "Attach a graph ID pattern to a retention policy set",
-	Long: `Attach a retention policy set to a graph ID pattern in the current project. The server accepts targets only for retention policy sets. If the pattern is already attached, the command does not fail.
+	Long: `Attach a retention policy set to a graph ID pattern in the current project. The server accepts targets only for retention policy sets. An object-level retention policy set accepts only the pattern "*". If the pattern is already attached, the command does not fail.
 
 Examples:
   zepctl policy-set retention-target attach <policy-set-uuid> --pattern customer-42

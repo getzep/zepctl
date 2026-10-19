@@ -804,6 +804,7 @@ zepctl policy-set retention-target detach <policy-set-uuid> --pattern <pattern>
 - `delete` requires `--force` in non-interactive contexts; in a TTY it prompts for confirmation.
 - Table output for `get` shows the policy set metadata plus the spec rendered as indented YAML.
 - `--pattern` accepts an exact graph ID, a prefix that ends in `*`, or `*` for all graphs in the project. The server validates the pattern.
+- A whole-graph retention policy set accepts all three pattern forms. An object-level retention policy set accepts only the pattern `*`.
 - A retention policy set has no effect until you attach it to a target.
 - `attach` and `detach` print a confirmation in table output. JSON and YAML output return the full target list.
 - The server accepts targets only for retention policy sets. It rejects targets for other policy-set types.
