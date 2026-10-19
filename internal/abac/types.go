@@ -32,6 +32,17 @@ type PolicySetList struct {
 	PolicySets []PolicySetSummary `json:"policy_sets"`
 }
 
+// RetentionTarget is a graph ID pattern that a retention policy set is attached to.
+type RetentionTarget struct {
+	ProjectUUID string `json:"project_uuid"`
+	Pattern     string `json:"pattern"`
+}
+
+// RetentionTargets is the target list that the retention-target endpoints return.
+type RetentionTargets struct {
+	Targets []RetentionTarget `json:"targets"`
+}
+
 // AttachedPolicySets is the public response for policy-set attachments.
 type AttachedPolicySets struct {
 	PolicySets []PolicySetSummary `json:"policy_sets"`

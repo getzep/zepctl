@@ -83,6 +83,47 @@ func (c *Client) ValidatePolicySet(ctx context.Context, yamlContent string) (*Va
 	return &result, nil
 }
 
+// --- Retention Targets ---
+
+func (c *Client) ListRetentionTargets(ctx context.Context, policySetUUID string) (*RetentionTargets, error) {
+	var result RetentionTargets
+	if err := c.doRequest(ctx, http.MethodGet, retentionTargetsPath(policySetUUID), nil, &result); err != nil {
+		return nil, err
+	}
+	if result.Targets == nil {
+		result.Targets = make([]RetentionTarget, 0)
+	}
+	return &result, nil
+}
+
+func (c *Client) AttachRetentionTarget(
+	ctx context.Context, policySetUUID, pattern string,
+) (*RetentionTargets, error) {
+	body := map[string]string{"pattern": pattern}
+	var result RetentionTargets
+	if err := c.doRequest(ctx, http.MethodPost, retentionTargetsPath(policySetUUID), body, &result); err != nil {
+		return nil, err
+	}
+	if result.Targets == nil {
+		result.Targets = make([]RetentionTarget, 0)
+	}
+	return &result, nil
+}
+
+func (c *Client) DetachRetentionTarget(
+	ctx context.Context, policySetUUID, pattern string,
+) (*RetentionTargets, error) {
+	body := map[string]string{"pattern": pattern}
+	var result RetentionTargets
+	if err := c.doRequest(ctx, http.MethodDelete, retentionTargetsPath(policySetUUID), body, &result); err != nil {
+		return nil, err
+	}
+	if result.Targets == nil {
+		result.Targets = make([]RetentionTarget, 0)
+	}
+	return &result, nil
+}
+
 // --- API Key Settings ---
 
 func (c *Client) GetAPIKeySettings(ctx context.Context, keyUUID string) (*APIKeySettings, error) {
@@ -252,6 +293,10 @@ func dryRunBody(principal Principal, action string, resource *Resource) any {
 
 func userGroupPolicySetsPath(groupUUID string) string {
 	return "/api/v4/user-groups/" + url.PathEscape(groupUUID) + "/policy-sets"
+}
+
+func retentionTargetsPath(policySetUUID string) string {
+	return "/api/v4/abac/policy-sets/" + url.PathEscape(policySetUUID) + "/retention-targets"
 }
 
 // --- Internal ---

@@ -167,6 +167,107 @@ func TestClient_ValidatePolicySet_Invalid(t *testing.T) {
 	assert.Equal(t, "bad_policy", result.Errors[0].PolicyID)
 }
 
+// --- Retention Targets ---
+
+func TestClient_ListRetentionTargets(t *testing.T) {
+	var gotReq *http.Request
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotReq = r
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		assert.Empty(t, body)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(RetentionTargets{
+			Targets: []RetentionTarget{{ProjectUUID: "project-1", Pattern: "scratch-*"}},
+		})
+	}))
+	defer srv.Close()
+
+	result, err := newTestClient(srv).ListRetentionTargets(context.Background(), "policy-set-1")
+	require.NoError(t, err)
+	require.Len(t, result.Targets, 1)
+	assert.Equal(t, "project-1", result.Targets[0].ProjectUUID)
+	assert.Equal(t, "scratch-*", result.Targets[0].Pattern)
+	assert.Equal(t, http.MethodGet, gotReq.Method)
+	assert.Equal(t, "/api/v4/abac/policy-sets/policy-set-1/retention-targets", gotReq.URL.Path)
+	assert.Equal(t, "test-project-uuid", gotReq.Header.Get("X-Zep-Project"))
+}
+
+func TestClient_AttachRetentionTarget(t *testing.T) {
+	var gotReq *http.Request
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotReq = r
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"pattern":"scratch-*"}`, string(body))
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(RetentionTargets{
+			Targets: []RetentionTarget{{ProjectUUID: "project-1", Pattern: "scratch-*"}},
+		})
+	}))
+	defer srv.Close()
+
+	result, err := newTestClient(srv).AttachRetentionTarget(context.Background(), "policy-set-1", "scratch-*")
+	require.NoError(t, err)
+	require.Len(t, result.Targets, 1)
+	assert.Equal(t, "scratch-*", result.Targets[0].Pattern)
+	assert.Equal(t, http.MethodPost, gotReq.Method)
+	assert.Equal(t, "/api/v4/abac/policy-sets/policy-set-1/retention-targets", gotReq.URL.Path)
+	assert.Equal(t, "test-project-uuid", gotReq.Header.Get("X-Zep-Project"))
+}
+
+func TestClient_DetachRetentionTarget(t *testing.T) {
+	var gotReq *http.Request
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotReq = r
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"pattern":"scratch-*"}`, string(body))
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(RetentionTargets{
+			Targets: []RetentionTarget{{ProjectUUID: "project-1", Pattern: "other-*"}},
+		})
+	}))
+	defer srv.Close()
+
+	result, err := newTestClient(srv).DetachRetentionTarget(context.Background(), "policy-set-1", "scratch-*")
+	require.NoError(t, err)
+	require.Len(t, result.Targets, 1)
+	assert.Equal(t, "other-*", result.Targets[0].Pattern)
+	assert.Equal(t, http.MethodDelete, gotReq.Method)
+	assert.Equal(t, "/api/v4/abac/policy-sets/policy-set-1/retention-targets", gotReq.URL.Path)
+	assert.Equal(t, "test-project-uuid", gotReq.Header.Get("X-Zep-Project"))
+}
+
+func TestClient_RetentionTargetsEmptyList(t *testing.T) {
+	for _, response := range []string{`{"targets":null}`, `{}`} {
+		t.Run(response, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(response))
+			}))
+			defer srv.Close()
+
+			result, err := newTestClient(srv).ListRetentionTargets(context.Background(), "policy-set-1")
+			require.NoError(t, err)
+			require.NotNil(t, result.Targets)
+			assert.Empty(t, result.Targets)
+		})
+	}
+}
+
+func TestClient_ListRetentionTargets_NotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"message":"policy set not found"}`))
+	}))
+	defer srv.Close()
+
+	_, err := newTestClient(srv).ListRetentionTargets(context.Background(), "missing")
+	require.Error(t, err)
+	assert.True(t, IsNotFound(err))
+}
+
 // --- API Key List ---
 
 func TestClient_ListAPIKeys(t *testing.T) {

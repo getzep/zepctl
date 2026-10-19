@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -89,18 +90,132 @@ func TestTruncateUUID(t *testing.T) {
 
 func TestPolicySetCommands_CredentialType(t *testing.T) {
 	cmds := map[string]*cobra.Command{
-		"list":     policySetListCmd,
-		"get":      policySetGetCmd,
-		"create":   policySetCreateCmd,
-		"update":   policySetUpdateCmd,
-		"delete":   policySetDeleteCmd,
-		"validate": policySetValidateCmd,
+		"list":                    policySetListCmd,
+		"get":                     policySetGetCmd,
+		"create":                  policySetCreateCmd,
+		"update":                  policySetUpdateCmd,
+		"delete":                  policySetDeleteCmd,
+		"validate":                policySetValidateCmd,
+		"retention-target list":   policySetRetentionTargetListCmd,
+		"retention-target attach": policySetRetentionTargetAttachCmd,
+		"retention-target detach": policySetRetentionTargetDetachCmd,
 	}
 	for name, cmd := range cmds {
 		t.Run(name, func(t *testing.T) {
 			require.NotNil(t, cmd.Annotations, "command %q has no annotations", name)
 			assert.Equal(t, "bearer", cmd.Annotations["zepctl_credential_type"],
 				"command %q should declare CredentialBearer", name)
+		})
+	}
+}
+
+// --- Policy Set Retention Targets ---
+
+func TestPolicySetRetentionTargetList_TableOutput(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/api/v4/abac/policy-sets/"+testUUID+"/retention-targets", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(abac.RetentionTargets{
+			Targets: []abac.RetentionTarget{
+				{ProjectUUID: "project-1", Pattern: "scratch-*"},
+				{ProjectUUID: "project-1", Pattern: "customer-42"},
+			},
+		})
+	}))
+	defer srv.Close()
+	withTestABACClient(t, srv)
+
+	cmd := newTestCommand(policySetRetentionTargetListCmd)
+	var runErr error
+	out := captureStdout(t, func() {
+		runErr = cmd.RunE(cmd, []string{testUUID})
+	})
+	require.NoError(t, runErr)
+	assert.Contains(t, out, "PATTERN")
+	assert.Contains(t, out, "scratch-*")
+	assert.Contains(t, out, "customer-42")
+}
+
+func TestPolicySetRetentionTargetAttach_TableOutput(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/api/v4/abac/policy-sets/"+testUUID+"/retention-targets", r.URL.Path)
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"pattern":"scratch-*"}`, string(body))
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(abac.RetentionTargets{
+			Targets: []abac.RetentionTarget{{ProjectUUID: "project-1", Pattern: "scratch-*"}},
+		})
+	}))
+	defer srv.Close()
+	withTestABACClient(t, srv)
+
+	cmd := newTestCommand(policySetRetentionTargetAttachCmd)
+	require.NoError(t, cmd.Flags().Set("pattern", "scratch-*"))
+	defer func() { _ = cmd.Flags().Set("pattern", "") }()
+	var runErr error
+	out := captureStderr(t, func() {
+		runErr = cmd.RunE(cmd, []string{testUUID})
+	})
+	require.NoError(t, runErr)
+	assert.Contains(t, out, fmt.Sprintf("Attached policy set %s to pattern %q", testUUID, "scratch-*"))
+}
+
+func TestPolicySetRetentionTargetDetach_TableOutput(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodDelete, r.Method)
+		assert.Equal(t, "/api/v4/abac/policy-sets/"+testUUID+"/retention-targets", r.URL.Path)
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"pattern":"scratch-*"}`, string(body))
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(abac.RetentionTargets{Targets: []abac.RetentionTarget{}})
+	}))
+	defer srv.Close()
+	withTestABACClient(t, srv)
+
+	cmd := newTestCommand(policySetRetentionTargetDetachCmd)
+	require.NoError(t, cmd.Flags().Set("pattern", "scratch-*"))
+	defer func() { _ = cmd.Flags().Set("pattern", "") }()
+	var runErr error
+	out := captureStderr(t, func() {
+		runErr = cmd.RunE(cmd, []string{testUUID})
+	})
+	require.NoError(t, runErr)
+	assert.Contains(t, out, fmt.Sprintf("Detached policy set %s from pattern %q", testUUID, "scratch-*"))
+}
+
+func TestPolicySetRetentionTarget_InvalidUUID(t *testing.T) {
+	err := policySetRetentionTargetListCmd.RunE(policySetRetentionTargetListCmd, []string{"bad-uuid"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `invalid policy set UUID: "bad-uuid"`)
+}
+
+func TestPolicySetRetentionTarget_NotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"message":"policy set not found"}`))
+	}))
+	defer srv.Close()
+	withTestABACClient(t, srv)
+
+	cmd := newTestCommand(policySetRetentionTargetListCmd)
+	err := cmd.RunE(cmd, []string{testUUID})
+	require.Error(t, err)
+	assert.Equal(t, "policy set not found: "+testUUID, err.Error())
+}
+
+func TestPolicySetRetentionTarget_PatternFlagRequired(t *testing.T) {
+	for _, cmd := range []*cobra.Command{
+		policySetRetentionTargetAttachCmd,
+		policySetRetentionTargetDetachCmd,
+	} {
+		t.Run(cmd.Name(), func(t *testing.T) {
+			annotations := cmd.Flags().Lookup("pattern").Annotations[cobra.BashCompOneRequiredFlag]
+			require.Len(t, annotations, 1)
+			assert.Equal(t, "true", annotations[0])
 		})
 	}
 }
