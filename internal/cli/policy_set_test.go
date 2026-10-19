@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	"github.com/getzep/zepctl/internal/abac"
 	"github.com/stretchr/testify/assert"
@@ -135,6 +136,31 @@ func TestPolicySetRetentionTargetList_TableOutput(t *testing.T) {
 	assert.Contains(t, out, "PATTERN")
 	assert.Contains(t, out, "scratch-*")
 	assert.Contains(t, out, "customer-42")
+}
+
+func TestPolicySetRetentionTargetList_YAMLOutput(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(abac.RetentionTargets{
+			Targets: []abac.RetentionTarget{{ProjectUUID: "project-1", Pattern: "scratch-*"}},
+		})
+	}))
+	defer srv.Close()
+	withTestABACClient(t, srv)
+
+	oldFormat := viper.GetString("output")
+	viper.Set("output", "yaml")
+	t.Cleanup(func() { viper.Set("output", oldFormat) })
+
+	cmd := newTestCommand(policySetRetentionTargetListCmd)
+	var runErr error
+	out := captureStdout(t, func() {
+		runErr = cmd.RunE(cmd, []string{testUUID})
+	})
+	require.NoError(t, runErr)
+	assert.Contains(t, out, "project_uuid: project-1")
+	assert.Contains(t, out, "pattern: scratch-*")
+	assert.NotContains(t, out, "projectuuid")
 }
 
 func TestPolicySetRetentionTargetAttach_TableOutput(t *testing.T) {
