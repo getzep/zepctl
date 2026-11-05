@@ -40,6 +40,7 @@ var authLoginCmd = &cobra.Command{
 		}
 
 		profile := cfg.GetCurrentProfile()
+		createProfile := profile == nil
 		if profile == nil {
 			// No profile exists -- create one. Use the name passed via
 			// --profile if provided, otherwise "default", so users can
@@ -64,12 +65,7 @@ var authLoginCmd = &cobra.Command{
 				newProfile.OAuthAudience = env.OAuthAudience
 			}
 
-			cfg.Profiles = append(cfg.Profiles, newProfile)
-			cfg.CurrentProfile = name
-			if err := cfg.Save(); err != nil {
-				return fmt.Errorf("creating profile %q: %w", name, err)
-			}
-			profile = cfg.GetProfile(name)
+			profile = &newProfile
 		} else if envName, _ := cmd.Flags().GetString("env"); envName != "" {
 			// --env on an existing profile is ambiguous (mutate? ignore?). Force
 			// the user through update-profile so the change is explicit.
@@ -77,9 +73,20 @@ var authLoginCmd = &cobra.Command{
 		}
 
 		if sso {
-			ssoURL, err = auth.ResolveSSOAppURL(config.GetAPIURL(), ssoURL)
+			apiURL := viper.GetString("api-url")
+			if apiURL == "" {
+				apiURL = profile.APIURL
+			}
+			ssoURL, err = auth.ResolveSSOAppURL(apiURL, ssoURL)
 			if err != nil {
 				return err
+			}
+		}
+		if createProfile {
+			cfg.Profiles = append(cfg.Profiles, *profile)
+			cfg.CurrentProfile = profile.Name
+			if err := cfg.Save(); err != nil {
+				return fmt.Errorf("creating profile %q: %w", profile.Name, err)
 			}
 		}
 

@@ -402,7 +402,54 @@ func TestLogoutRevocationFailure_StillClearsToken(t *testing.T) {
 
 func resetAuthLoginFlags(t *testing.T) {
 	t.Helper()
-	resetCmdFlags(t, authLoginCmd, "no-browser", "env")
+	resetCmdFlags(t, authLoginCmd, "no-browser", "env", "sso", "sso-url")
+}
+
+func TestAuthLogin_InvalidSSOURLDoesNotCreateProfile(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	resetAuthLoginFlags(t)
+	t.Cleanup(func() { resetAuthLoginFlags(t) })
+	viper.Set("profile", "dev")
+	cfg, err := config.Reload()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Environments = append(cfg.Environments, config.Environment{
+		Name: "development", APIURL: "https://api.dev.example.com",
+	})
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
+	for flag, value := range map[string]string{"sso": "true", "no-browser": "true", "env": "development"} {
+		if err := authLoginCmd.Flags().Set(flag, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cmd := &cobra.Command{Use: "test"}
+	cmd.SetContext(ctx)
+	cmd.Flags().AddFlagSet(authLoginCmd.Flags())
+	if err := authLoginCmd.RunE(cmd, nil); err == nil || !strings.Contains(err.Error(), "--sso-url") {
+		t.Fatalf("expected a missing SSO URL error, got %v", err)
+	}
+	if cfg.GetProfile("dev") != nil {
+		t.Fatal("invalid SSO options changed the in-memory profiles")
+	}
+	cfg, err = config.Reload()
+	if err != nil || cfg.GetProfile("dev") != nil {
+		t.Fatalf("invalid SSO options persisted a profile: %v", err)
+	}
+	if err := authLoginCmd.Flags().Set("sso-url", "https://dashboard.dev.example.com"); err != nil {
+		t.Fatal(err)
+	}
+	captureStdout(t, func() { _ = authLoginCmd.RunE(cmd, nil) })
+	cfg, err = config.Reload()
+	if err != nil || cfg.GetProfile("dev") == nil {
+		t.Fatalf("the corrected login did not create the profile: %v", err)
+	}
 }
 
 // TestAuthLogin_BootstrapWithEnv_AppliesEnvToNewProfile verifies that
