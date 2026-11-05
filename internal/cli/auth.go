@@ -234,7 +234,11 @@ var authStatusCmd = &cobra.Command{
 
 		fmt.Printf("Profile:       %s\n", profile.Name)
 		fmt.Printf("API URL:       %s\n", apiURL)
-		fmt.Printf("OIDC issuer:   %s\n", oauthCfg.Issuer)
+		if creds.EnterpriseSSO {
+			fmt.Println("OIDC issuer:   managed by the enterprise SSO connection")
+		} else {
+			fmt.Printf("OIDC issuer:   %s\n", oauthCfg.Issuer)
+		}
 
 		if creds.HasAPIKey() {
 			masked := maskKey(creds.APIKey)
