@@ -253,6 +253,13 @@ func TestAutoSelectProject_AuthenticateFails(t *testing.T) {
 	}
 }
 
+func TestAuthStatusOutput_EnterpriseIssuer(t *testing.T) {
+	got := runAuthStatus(t, &keyring.Credentials{AccessToken: "test-sso", EnterpriseSSO: true})
+	if !strings.Contains(got, "managed by the enterprise SSO connection") || strings.Contains(got, "https://auth.getzep.com") {
+		t.Fatalf("unexpected enterprise issuer output: %s", got)
+	}
+}
+
 func TestAuthStatusOutput_BearerOnly(t *testing.T) {
 	got := runAuthStatus(t, &keyring.Credentials{
 		AccessToken:  "eyJhbGci.valid_tok",
