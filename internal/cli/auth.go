@@ -28,6 +28,11 @@ var authLoginCmd = &cobra.Command{
 	Short: "Authenticate via browser to obtain a bearer token",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		noBrowser, _ := cmd.Flags().GetBool("no-browser")
+		sso, _ := cmd.Flags().GetBool("sso")
+		ssoURL, _ := cmd.Flags().GetString("sso-url")
+		if ssoURL != "" && !sso {
+			return fmt.Errorf("--sso-url requires --sso")
+		}
 
 		cfg, err := config.Load()
 		if err != nil {
@@ -71,17 +76,31 @@ var authLoginCmd = &cobra.Command{
 			return fmt.Errorf("profile %q already exists; use \"config update-profile --env %s\" to change its environment", profile.Name, envName)
 		}
 
+		if sso {
+			ssoURL, err = auth.ResolveSSOAppURL(config.GetAPIURL(), ssoURL)
+			if err != nil {
+				return err
+			}
+		}
+
 		// If there's an existing bearer token, revoke its refresh token first.
 		oauthCfg := auth.OAuthConfigFor(profile.OAuthIssuer, profile.OAuthClientID, profile.OAuthAudience)
 		creds, err := keyring.GetCredentials(profile.Name)
-		if err == nil && creds.RefreshToken != "" {
+		if !sso && err == nil && !creds.EnterpriseSSO && creds.RefreshToken != "" {
 			if err := auth.RevokeToken(cmd.Context(), oauthCfg, creds.RefreshToken); err != nil {
 				output.Warn("Could not revoke existing token: %v", err)
 			}
 		}
 
-		session := auth.NewKeychainSession(profile.Name)
-		result, err := auth.Login(cmd.Context(), oauthCfg, session, noBrowser)
+		var result *auth.TokenResult
+		if sso {
+			result, err = auth.LoginSSO(cmd.Context(), auth.SSOLoginOptions{
+				AppURL: ssoURL, NoBrowser: noBrowser, ReadCode: readLineContext,
+				Output: cmd.ErrOrStderr(),
+			})
+		} else {
+			result, err = auth.Login(cmd.Context(), oauthCfg, auth.NewKeychainSession(profile.Name), noBrowser)
+		}
 		if err != nil {
 			return fmt.Errorf("authentication failed: %w", err)
 		}
@@ -95,7 +114,16 @@ var authLoginCmd = &cobra.Command{
 				email = claims.Email
 			}
 		}
-		if email != "" {
+		if sso {
+			if err := auth.StoreSSOBearerToken(profile.Name, result, email); err != nil {
+				return fmt.Errorf("storing the SSO credential: %w", err)
+			}
+			if creds != nil && !creds.EnterpriseSSO && creds.RefreshToken != "" {
+				if err := auth.RevokeToken(cmd.Context(), oauthCfg, creds.RefreshToken); err != nil {
+					output.Warn("Could not revoke the previous provider token: %v", err)
+				}
+			}
+		} else if email != "" {
 			// Update the keychain entry with the email.
 			creds, err = keyring.GetCredentials(profile.Name)
 			if err == nil {
@@ -107,7 +135,7 @@ var authLoginCmd = &cobra.Command{
 		if email != "" {
 			output.Info("Authenticated as %s", email)
 		} else {
-			output.Info("Authenticated successfully")
+			output.Info("Authenticated.")
 		}
 
 		// Auto-select project if needed.
@@ -201,6 +229,9 @@ var authStatusCmd = &cobra.Command{
 		}
 
 		if creds.HasBearerToken() {
+			if creds.EnterpriseSSO {
+				fmt.Println("Login method:  enterprise SSO")
+			}
 			if creds.IsExpired() {
 				fmt.Println("Bearer token:  expired")
 			} else {
@@ -314,5 +345,7 @@ func init() {
 	authCmd.AddCommand(authStatusCmd)
 
 	authLoginCmd.Flags().Bool("no-browser", false, "Print authorization URL instead of opening browser")
+	authLoginCmd.Flags().Bool("sso", false, "Sign in through the account's enterprise SSO connection")
+	authLoginCmd.Flags().String("sso-url", "", "Dashboard origin for enterprise SSO on a custom deployment (requires --sso)")
 	authLoginCmd.Flags().String("env", "", "When creating a new profile, apply a named environment preset (see \"config add-environment\")")
 }

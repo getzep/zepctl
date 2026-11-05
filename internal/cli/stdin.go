@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -29,10 +30,14 @@ var (
 // input. A read error stops the read, and the function returns any bytes read
 // before the error.
 func readLine() string {
+	return readLineFrom(stdinReader)
+}
+
+func readLineFrom(reader io.Reader) string {
 	var line []byte
 	var char [1]byte
 	for {
-		n, err := stdinReader.Read(char[:])
+		n, err := reader.Read(char[:])
 		if n > 0 {
 			if char[0] == '\n' {
 				break
@@ -44,6 +49,18 @@ func readLine() string {
 		}
 	}
 	return strings.TrimSpace(string(line))
+}
+
+func readLineContext(ctx context.Context) (string, error) {
+	reader := stdinReader
+	lines := make(chan string, 1)
+	go func() { lines <- readLineFrom(reader) }()
+	select {
+	case line := <-lines:
+		return line, nil
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
 }
 
 // confirmYesNo reports whether a [y/N] prompt was answered yes.
