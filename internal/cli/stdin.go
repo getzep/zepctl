@@ -51,6 +51,8 @@ func readLineFrom(reader io.Reader) string {
 	return strings.TrimSpace(string(line))
 }
 
+// The SSO code is displayed by the dashboard. It is not a bearer credential:
+// redemption also requires the initiating CLI's private PKCE verifier.
 func readLineContext(ctx context.Context) (string, error) {
 	reader := stdinReader
 	lines := make(chan string, 1)

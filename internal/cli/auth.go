@@ -26,6 +26,13 @@ var authCmd = &cobra.Command{
 var authLoginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Authenticate via browser to obtain a bearer token",
+	Long: `Authenticate with the provider or your account's enterprise SSO connection.
+
+Examples:
+  zepctl auth login
+  zepctl auth login --sso
+  zepctl auth login --sso --no-browser
+  zepctl auth login --sso --sso-url https://app.example.com`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		noBrowser, _ := cmd.Flags().GetBool("no-browser")
 		sso, _ := cmd.Flags().GetBool("sso")
