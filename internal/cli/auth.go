@@ -92,6 +92,7 @@ Examples:
 		if createProfile {
 			cfg.Profiles = append(cfg.Profiles, *profile)
 			cfg.CurrentProfile = profile.Name
+			profile = cfg.GetProfile(profile.Name)
 			if err := cfg.Save(); err != nil {
 				return fmt.Errorf("creating profile %q: %w", profile.Name, err)
 			}
