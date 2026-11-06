@@ -17,11 +17,12 @@ const (
 // All fields are optional -- a profile may have just an API key,
 // just a bearer token, or both.
 type Credentials struct {
-	APIKey       string `json:"api_key,omitempty"`
-	AccessToken  string `json:"access_token,omitempty"`
-	RefreshToken string `json:"refresh_token,omitempty"`
-	ExpiresAt    string `json:"expires_at,omitempty"`
-	UserEmail    string `json:"user_email,omitempty"`
+	APIKey        string `json:"api_key,omitempty"`
+	AccessToken   string `json:"access_token,omitempty"`
+	RefreshToken  string `json:"refresh_token,omitempty"`
+	ExpiresAt     string `json:"expires_at,omitempty"`
+	UserEmail     string `json:"user_email,omitempty"`
+	EnterpriseSSO bool   `json:"enterprise_sso,omitempty"`
 }
 
 // IsExpired returns true if the access token has expired.

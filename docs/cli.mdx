@@ -98,6 +98,15 @@ API keys and OAuth refresh tokens are stored in the system keychain (macOS Keych
 # Open a browser to authenticate, then auto-select a project
 zepctl auth login
 
+# Sign in through an enterprise SSO connection
+zepctl auth login --sso
+
+# Use enterprise SSO from a remote terminal. Enter the short-lived code shown in the browser.
+zepctl auth login --sso --no-browser
+
+# Select the dashboard origin for a custom API deployment
+zepctl auth login --sso --sso-url https://dashboard.example.com
+
 # Bootstrap an isolated dev profile against a configured environment preset
 zepctl --profile dev auth login --env dev
 
@@ -179,6 +188,25 @@ zepctl config delete-environment <name> [--force]
 ### auth
 
 Manage bearer-token authentication for the current profile.
+
+For an SSO-bound account, use `zepctl auth login --sso`. The browser uses the
+existing dashboard enterprise SSO flow and asks you to approve the CLI login.
+The CLI stores the credential in the system keychain and preserves the profile's
+API key. The CLI does not print the credential or put it in a URL.
+
+The SSO credential expires with the original enterprise session. When the
+credential expires, run `zepctl auth login --sso` again. The CLI does not send
+SSO credentials to the regular provider refresh endpoint. `auth logout` clears
+the CLI credential but does not end the dashboard or identity-provider session.
+
+Use `--no-browser` with `--sso` for a remote terminal. Open the printed URL in
+your browser, sign in, approve the login, and enter the short-lived code in the
+terminal. The terminal does not display the code as you enter it.
+The code works once and expires after 90 seconds.
+
+For a custom deployment, set `--sso-url` to its dashboard origin. The URL must
+use HTTPS. HTTP is permitted only for local loopback development. The companion
+dashboard CLI login endpoints must be deployed before this command can work.
 
 ```bash
 # Open a browser to authenticate, store refresh + access tokens, auto-select a project

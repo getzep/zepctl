@@ -43,11 +43,13 @@ func (s *KeychainSession) SetRawToken(token *oauth2.Token) error {
 		creds.AccessToken = ""
 		creds.RefreshToken = ""
 		creds.ExpiresAt = ""
+		creds.EnterpriseSSO = false
 		return keyring.SetCredentials(s.profile, creds)
 	}
 
 	creds.AccessToken = token.AccessToken
 	creds.RefreshToken = token.RefreshToken
+	creds.EnterpriseSSO = false
 	if !token.Expiry.IsZero() {
 		creds.ExpiresAt = token.Expiry.Format(time.RFC3339)
 	}

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	zepclient "github.com/getzep/zep-go/v4/client"
 	"github.com/getzep/zep-go/v4/option"
@@ -139,9 +140,9 @@ func normalizeSDKBaseURL(raw string) string {
 // keychain and a user-facing message is returned.
 func newBearerClient(ctx context.Context) (*http.Client, error) {
 	if token := config.GetBearerTokenOverride(); token != "" {
-		return &http.Client{
+		return withSSORequiredHandling(&http.Client{
 			Transport: &BearerTransport{Token: token, Base: http.DefaultTransport},
-		}, nil
+		}), nil
 	}
 
 	cfg, err := config.Load()
@@ -152,6 +153,19 @@ func newBearerClient(ctx context.Context) (*http.Client, error) {
 	profile := cfg.GetCurrentProfile()
 	if profile == nil {
 		return nil, fmt.Errorf("no active profile; run \"zepctl auth login\" to authenticate")
+	}
+	creds, err := keyring.GetCredentials(profile.Name)
+	if err != nil {
+		return nil, fmt.Errorf("reading credentials: %w", err)
+	}
+	if creds.EnterpriseSSO {
+		expiry, err := time.Parse(time.RFC3339, creds.ExpiresAt)
+		if err != nil || !creds.HasBearerToken() || !expiry.After(time.Now()) {
+			return nil, auth.ErrSSOLoginRequired
+		}
+		return withSSORequiredHandling(&http.Client{
+			Transport: &enterpriseBearerTransport{token: creds.AccessToken, expiresAt: expiry},
+		}), nil
 	}
 
 	oauthCfg := auth.OAuthConfigFor(profile.OAuthIssuer, profile.OAuthClientID, profile.OAuthAudience)
@@ -168,7 +182,7 @@ func newBearerClient(ctx context.Context) (*http.Client, error) {
 		profile: profile.Name,
 	}
 
-	return httpClient, nil
+	return withSSORequiredHandling(httpClient), nil
 }
 
 // NewBearerHTTPClient returns a raw *http.Client that attaches bearer token

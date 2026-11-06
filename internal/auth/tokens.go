@@ -18,6 +18,7 @@ func StoreBearerToken(profile string, result *TokenResult, email string) error {
 	creds.RefreshToken = result.RefreshToken
 	creds.ExpiresAt = result.ExpiresAt.Format(time.RFC3339)
 	creds.UserEmail = email
+	creds.EnterpriseSSO = false
 
 	return keyring.SetCredentials(profile, creds)
 }
@@ -34,6 +35,7 @@ func ClearBearerToken(profile string) error {
 	creds.RefreshToken = ""
 	creds.ExpiresAt = ""
 	creds.UserEmail = ""
+	creds.EnterpriseSSO = false
 
 	return keyring.SetCredentials(profile, creds)
 }
