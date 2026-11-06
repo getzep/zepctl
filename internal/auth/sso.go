@@ -131,7 +131,8 @@ func LoginSSO(ctx context.Context, opts SSOLoginOptions) (*TokenResult, error) {
 }
 
 func (f *ssoFlow) manualCode(ctx context.Context, appURL string, opts SSOLoginOptions) (string, error) {
-	// manual=true makes the dashboard display the code, not use the callback.
+	// manual=true makes the dashboard display the code instead of redirecting.
+	// This flow does not use a loopback callback listener.
 	if opts.ReadCode == nil {
 		return "", fmt.Errorf("authorization-code input is not available")
 	}

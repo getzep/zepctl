@@ -201,7 +201,8 @@ the CLI credential but does not end the dashboard or identity-provider session.
 
 Use `--no-browser` with `--sso` for a remote terminal. Open the printed URL in
 your browser, sign in, approve the login, and enter the short-lived code in the
-terminal. The code works once and expires after 90 seconds.
+terminal. The terminal does not display the code as you enter it.
+The code works once and expires after 90 seconds.
 
 For a custom deployment, set `--sso-url` to its dashboard origin. The URL must
 use HTTPS. HTTP is permitted only for local loopback development. The companion

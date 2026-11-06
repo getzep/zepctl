@@ -110,7 +110,10 @@ Examples:
 		var result *auth.TokenResult
 		if sso {
 			result, err = auth.LoginSSO(cmd.Context(), auth.SSOLoginOptions{
-				AppURL: ssoURL, NoBrowser: noBrowser, ReadCode: readLineContext,
+				AppURL: ssoURL, NoBrowser: noBrowser,
+				ReadCode: func(ctx context.Context) (string, error) {
+					return readSSOCodeContext(ctx, cmd.ErrOrStderr())
+				},
 				Output: cmd.ErrOrStderr(),
 			})
 		} else {

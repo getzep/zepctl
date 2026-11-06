@@ -51,15 +51,55 @@ func readLineFrom(reader io.Reader) string {
 	return strings.TrimSpace(string(line))
 }
 
-// The SSO code is displayed by the dashboard. It is not a bearer credential:
-// redemption also requires the initiating CLI's private PKCE verifier.
-func readLineContext(ctx context.Context) (string, error) {
+func readSSOCodeContext(ctx context.Context, output io.Writer) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	reader := stdinReader
-	lines := make(chan string, 1)
-	go func() { lines <- readLineFrom(reader) }()
+	hidden := stdinIsTerminal()
+	if hidden {
+		fd := int(os.Stdin.Fd())
+		state, err := term.MakeRaw(fd)
+		if err != nil {
+			return "", fmt.Errorf("hiding authorization-code input: %w", err)
+		}
+		defer func() {
+			_ = term.Restore(fd, state)
+			fmt.Fprintln(output)
+		}()
+	}
+	return readSSOCodeFrom(ctx, reader, hidden)
+}
+
+func readSSOCodeFrom(ctx context.Context, reader io.Reader, hidden bool) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	var terminal *term.Terminal
+	if hidden {
+		// Only the caller changes terminal state, so cancellation restores echo
+		// even if the input goroutine is still blocked.
+		terminal = term.NewTerminal(struct {
+			io.Reader
+			io.Writer
+		}{reader, io.Discard}, "")
+	}
+	type result struct {
+		code string
+		err  error
+	}
+	lines := make(chan result, 1)
+	go func() {
+		if terminal != nil {
+			code, err := terminal.ReadPassword("")
+			lines <- result{code, err}
+		} else {
+			lines <- result{code: readLineFrom(reader)}
+		}
+	}()
 	select {
 	case line := <-lines:
-		return line, nil
+		return strings.TrimSpace(line.code), line.err
 	case <-ctx.Done():
 		return "", ctx.Err()
 	}
